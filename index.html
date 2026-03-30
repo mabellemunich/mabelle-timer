@@ -43,7 +43,7 @@
             UserCog, Power, MessageSquare, StickyNote, Megaphone, Send, User, 
             Cake, CloudSun, ThermometerSun, Eye, AlertTriangle, RotateCw, Settings, 
             KeyRound, PiggyBank, MapPin, Siren, Moon, History, Plus, Minus, ArrowRight, ShieldCheck,
-            CalendarClock, Wand2, ChevronLeft, ChevronRight, Check, Layers
+            CalendarClock, Wand2, ChevronLeft, ChevronRight, Check, Layers, Shield
         } from 'lucide-react';
 
         // --- FIREBASE KONFIGURATION ---
@@ -118,26 +118,6 @@
             return { start: toIso(start), end: toIso(end) };
         };
 
-        const getPeriodOptions = () => {
-            const options = [];
-            const today = new Date();
-            for (let i = -12; i <= 2; i++) {
-                const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
-                const year = d.getFullYear();
-                const month = d.getMonth();
-                const start = new Date(year, month, 16);
-                const end = new Date(year, month + 1, 15);
-                const toIso = (dateObj) => {
-                    const offset = dateObj.getTimezoneOffset();
-                    const local = new Date(dateObj.getTime() - (offset*60*1000));
-                    return local.toISOString().split('T')[0];
-                };
-                const label = `${formatDate(start)} bis ${formatDate(end)}`;
-                options.push({ label: label, value: JSON.stringify({ start: toIso(start), end: toIso(end) }), startIso: toIso(start) });
-            }
-            return options;
-        };
-
         const getMonday = (d) => {
             const date = new Date(d);
             const day = date.getDay();
@@ -197,6 +177,7 @@
             const [view, setView] = useState('terminal'); 
             const [adminSubView, setAdminSubView] = useState('overview'); 
             const [activeEmployee, setActiveEmployee] = useState(null);
+            const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
             
             // Modals
             const [showAddEmployee, setShowAddEmployee] = useState(false);
@@ -212,7 +193,7 @@
             const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
             const [editingLog, setEditingLog] = useState(null);
             const [showShiftModal, setShowShiftModal] = useState(false);
-            const [showShiftTemplateModal, setShowShiftTemplateModal] = useState(false); // NEU
+            const [showShiftTemplateModal, setShowShiftTemplateModal] = useState(false); 
             
             // Data
             const [period, setPeriod] = useState(getDefaultPeriod());
@@ -222,7 +203,7 @@
             const [employees, setEmployees] = useState([]);
             const [logs, setLogs] = useState([]);
             const [shifts, setShifts] = useState([]); 
-            const [shiftTemplates, setShiftTemplates] = useState([]); // NEU
+            const [shiftTemplates, setShiftTemplates] = useState([]); 
             const [availabilities, setAvailabilities] = useState([]);
             const [settlements, setSettlements] = useState([]);
             const [bossMessages, setBossMessages] = useState([]); 
@@ -245,11 +226,13 @@
             const [newEmpPin, setNewEmpPin] = useState('');
             const [newEmpBirthDate, setNewEmpBirthDate] = useState(''); 
             const [newEmpWeeklyHours, setNewEmpWeeklyHours] = useState('40'); 
+            const [newEmpRole, setNewEmpRole] = useState('Service');
+            const [newEmpAccess, setNewEmpAccess] = useState('user');
             
             const [clockOutNote, setClockOutNote] = useState('');
             const [newBossMessage, setNewBossMessage] = useState(''); 
             const [msgRecipient, setMsgRecipient] = useState('all'); 
-            const [editEmpData, setEditEmpData] = useState({ id: '', name: '', pin: '', birthDate: '', overtimeBalance: 0, weeklyHours: 40 }); 
+            const [editEmpData, setEditEmpData] = useState({ id: '', name: '', pin: '', birthDate: '', overtimeBalance: 0, weeklyHours: 40, primaryRole: 'Service', accessLevel: 'user' }); 
             const [manualLogData, setManualLogData] = useState({ employeeId: '', date: new Date().toISOString().split('T')[0], startTime: '08:00', endTime: '16:00' });
             const [settleData, setSettleData] = useState({ billedHours: 0, carryOver: 0 });
             const [manualOvertimeAmount, setManualOvertimeAmount] = useState('');
@@ -257,9 +240,13 @@
             
             // Dienstplan Eingabe
             const [shiftData, setShiftData] = useState({ id: null, employeeId: '', date: '', startTime: '09:00', endTime: '17:00', role: 'Service' });
-            const [newTemplate, setNewTemplate] = useState({ name: '', startTime: '08:00', endTime: '16:00', role: 'Service' }); // NEU
+            const [newTemplate, setNewTemplate] = useState({ name: '', startTime: '08:00', endTime: '16:00', role: 'Service' }); 
 
             const birthdayAlerts = useMemo(() => checkUpcomingBirthdays(employees), [employees]);
+
+            // Zugriffsrechte Helper
+            const hasAdminRights = isGlobalAdmin || (activeEmployee && activeEmployee.accessLevel === 'admin');
+            const hasManagerRights = hasAdminRights || (activeEmployee && activeEmployee.accessLevel === 'manager');
 
             // Effects
             useEffect(() => { const timer = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(timer); }, []);
@@ -287,7 +274,7 @@
                     const empRef = collection(db, 'artifacts', appId, 'public', 'data', 'employees');
                     const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'timelogs');
                     const shiftsRef = collection(db, 'artifacts', appId, 'public', 'data', 'shifts'); 
-                    const templatesRef = collection(db, 'artifacts', appId, 'public', 'data', 'shift_templates'); // NEU
+                    const templatesRef = collection(db, 'artifacts', appId, 'public', 'data', 'shift_templates'); 
                     const availRef = collection(db, 'artifacts', appId, 'public', 'data', 'availabilities'); 
                     const settRef = collection(db, 'artifacts', appId, 'public', 'data', 'settlements');
                     const msgRef = collection(db, 'artifacts', appId, 'public', 'data', 'messages');
@@ -297,7 +284,7 @@
                     const unsubEmp = onSnapshot(empRef, (snap) => { setEmployees(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setLoading(false); setDbStatus('active'); });
                     const unsubLogs = onSnapshot(logsRef, (snap) => setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                     const unsubShifts = onSnapshot(shiftsRef, (snap) => setShifts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-                    const unsubTemplates = onSnapshot(templatesRef, (snap) => setShiftTemplates(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })))); // NEU
+                    const unsubTemplates = onSnapshot(templatesRef, (snap) => setShiftTemplates(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })))); 
                     const unsubAvail = onSnapshot(availRef, (snap) => setAvailabilities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })))); 
                     const unsubSett = onSnapshot(settRef, (snap) => setSettlements(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                     const unsubMsg = onSnapshot(msgRef, (snap) => {
@@ -317,6 +304,12 @@
                     return () => { unsubEmp(); unsubLogs(); unsubShifts(); unsubTemplates(); unsubAvail(); unsubSett(); unsubMsg(); unsubSec(); unsubSettings(); };
                 } catch(e) { setDbStatus('error'); }
             }, [user]);
+
+            useEffect(() => {
+                if (view === 'admin' && !hasAdminRights && hasManagerRights) {
+                    setAdminSubView('schedule');
+                }
+            }, [view, hasAdminRights, hasManagerRights]);
 
             const showStatus = (msg, type) => { setStatusMsg({ msg, type }); setTimeout(() => setStatusMsg(null), 3000); };
 
@@ -372,6 +365,7 @@
                 setPin(nextPin);
                 
                 if (nextPin === adminPin) { 
+                    setIsGlobalAdmin(true);
                     setView('admin'); 
                     setAdminSubView('overview');
                     setPin(''); 
@@ -446,7 +440,7 @@
                 if (confirmPinInput !== adminPin) { showStatus("Falsche PIN! Abbruch.", "error"); return; }
                 const allDocs = [...employees.map(e => ({col:'employees',id:e.id})), ...logs.map(l => ({col:'timelogs',id:l.id})), ...settlements.map(s => ({col:'settlements',id:s.id})), ...bossMessages.map(m => ({col:'messages',id:m.id})), ...securityLogs.map(s => ({col:'security_logs', id: s.id})), ...shifts.map(s => ({col:'shifts', id:s.id})), ...availabilities.map(a => ({col:'availabilities', id:a.id})), ...shiftTemplates.map(t => ({col:'shift_templates', id:t.id}))]; 
                 for(const i of allDocs) try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', i.col, i.id)); } catch(e){} 
-                showStatus("System zurückgesetzt", "success"); setShowDeleteConfirm(null); setView('terminal'); 
+                showStatus("System zurückgesetzt", "success"); setShowDeleteConfirm(null); setIsGlobalAdmin(false); setView('terminal'); 
             };
 
             const handleAddEmployee = async (e) => { 
@@ -455,9 +449,12 @@
                 if (employees.some(emp => emp.pin === newEmpPin)) { showStatus("PIN vergeben", "error"); return; } 
                 try { 
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'employees'), { 
-                        name: newEmpName, pin: newEmpPin, birthDate: newEmpBirthDate, overtimeBalance: 0, weeklyHours: parseFloat(newEmpWeeklyHours) || 0
+                        name: newEmpName, pin: newEmpPin, birthDate: newEmpBirthDate, overtimeBalance: 0, 
+                        weeklyHours: parseFloat(newEmpWeeklyHours) || 0,
+                        primaryRole: newEmpRole,
+                        accessLevel: newEmpAccess
                     }); 
-                    setNewEmpName(''); setNewEmpPin(''); setNewEmpBirthDate(''); setNewEmpWeeklyHours('40'); setShowAddEmployee(false); 
+                    setNewEmpName(''); setNewEmpPin(''); setNewEmpBirthDate(''); setNewEmpWeeklyHours('40'); setNewEmpRole('Service'); setNewEmpAccess('user'); setShowAddEmployee(false); 
                     showStatus("Mitarbeiter angelegt", "success"); 
                 } catch (err) { showStatus("Fehler beim Speichern", "error"); } 
             };
@@ -465,9 +462,12 @@
                 e.preventDefault(); 
                 if (employees.some(emp => emp.pin === editEmpData.pin && emp.id !== editEmpData.id)) { showStatus("PIN vergeben", "error"); return; } 
                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'employees', editEmpData.id), { 
-                    name: editEmpData.name, pin: editEmpData.pin, birthDate: editEmpData.birthDate, overtimeBalance: parseFloat(editEmpData.overtimeBalance), weeklyHours: parseFloat(editEmpData.weeklyHours) || 0
+                    name: editEmpData.name, pin: editEmpData.pin, birthDate: editEmpData.birthDate, overtimeBalance: parseFloat(editEmpData.overtimeBalance), 
+                    weeklyHours: parseFloat(editEmpData.weeklyHours) || 0,
+                    primaryRole: editEmpData.primaryRole || 'Service',
+                    accessLevel: editEmpData.accessLevel || 'user'
                 }); 
-                setSelectedEmpForDetails(prev => ({...prev, name: editEmpData.name, pin: editEmpData.pin, birthDate: editEmpData.birthDate, overtimeBalance: editEmpData.overtimeBalance, weeklyHours: editEmpData.weeklyHours})); 
+                setSelectedEmpForDetails(prev => ({...prev, name: editEmpData.name, pin: editEmpData.pin, birthDate: editEmpData.birthDate, overtimeBalance: editEmpData.overtimeBalance, weeklyHours: editEmpData.weeklyHours, primaryRole: editEmpData.primaryRole, accessLevel: editEmpData.accessLevel})); 
                 setShowEditEmpModal(false); showStatus("Profil aktualisiert", "success"); 
             };
 
@@ -520,6 +520,17 @@
                 }
                 return days;
             }, [empScheduleWeekStart]);
+
+            // MITARBEITER GRUPPIERUNG
+            const groupedEmployees = useMemo(() => {
+                const groups = [
+                    { role: 'Service', emps: employees.filter(e => e.primaryRole === 'Service' || !e.primaryRole) },
+                    { role: 'Bar', emps: employees.filter(e => e.primaryRole === 'Bar') },
+                    { role: 'Küche', emps: employees.filter(e => e.primaryRole === 'Küche') },
+                    { role: 'Andere', emps: employees.filter(e => e.primaryRole && !['Service','Bar','Küche'].includes(e.primaryRole)) }
+                ];
+                return groups.filter(g => g.emps.length > 0);
+            }, [employees]);
 
             const saveShift = async (e) => {
                 e.preventDefault();
@@ -594,7 +605,7 @@
                             
                             const shiftRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'shifts'));
                             batch.set(shiftRef, {
-                                employeeId: emp.id, date: dateStr, startTime: startStrTime, endTime: endStrTime, calculatedHours: calc, role: 'Service'
+                                employeeId: emp.id, date: dateStr, startTime: startStrTime, endTime: endStrTime, calculatedHours: calc, role: emp.primaryRole || 'Service'
                             });
                             
                             currentPlanned += parseFloat(calc);
@@ -615,7 +626,6 @@
                 setIsProcessing(false);
             };
 
-            // NEU: SCHICHT VORLAGEN FUNKTIONEN
             const handleAddTemplate = async (e) => {
                 e.preventDefault();
                 try {
@@ -632,30 +642,35 @@
                 } catch(err) { showStatus("Fehler", "error"); }
             };
 
-            // NEU: DIENSTPLAN PDF EXPORT
             const handlePrintSchedule = () => {
                 const wochentageNamen = ['So','Mo','Di','Mi','Do','Fr','Sa'];
                 const daysHtml = daysOfWeek.map(d => `<th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:center;">${wochentageNamen[d.getDay()]}<br><small style="color:#666;">${d.getDate()}.${d.getMonth()+1}.</small></th>`).join('');
 
-                const rowsHtml = employees.map(emp => {
-                    const cells = shiftDatesStr.map(dateStr => {
-                        const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr);
-                        if (shift) {
-                            return `<td style="padding:10px; border:1px solid #ddd; text-align:center; vertical-align:top;">
-                                <div style="font-weight:bold; font-size:14px; color:#111827;">${shift.startTime} - ${shift.endTime}</div>
-                                <div style="font-size:10px; color:#ea580c; text-transform:uppercase; margin-top:4px; font-weight:bold;">${shift.role || 'Service'}</div>
-                                <div style="font-size:10px; color:#6b7280; margin-top:2px;">${shift.calculatedHours} h</div>
-                            </td>`;
-                        }
-                        return `<td style="padding:10px; border:1px solid #ddd; text-align:center; color:#ccc;">-</td>`;
+                const rowsHtml = groupedEmployees.map(group => {
+                    const groupHeader = `<tr><td colspan="10" style="padding:10px; background:#e5e7eb; font-weight:bold; text-transform:uppercase; font-size:12px; color:#4b5563; border:1px solid #ddd;">${group.role}</td></tr>`;
+                    
+                    const empsHtml = group.emps.map(emp => {
+                        const cells = shiftDatesStr.map(dateStr => {
+                            const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr);
+                            if (shift) {
+                                return `<td style="padding:10px; border:1px solid #ddd; text-align:center; vertical-align:top;">
+                                    <div style="font-weight:bold; font-size:14px; color:#111827;">${shift.startTime} - ${shift.endTime}</div>
+                                    <div style="font-size:10px; color:#ea580c; text-transform:uppercase; margin-top:4px; font-weight:bold;">${shift.role || 'Service'}</div>
+                                    <div style="font-size:10px; color:#6b7280; margin-top:2px;">${shift.calculatedHours} h</div>
+                                </td>`;
+                            }
+                            return `<td style="padding:10px; border:1px solid #ddd; text-align:center; color:#ccc;">-</td>`;
+                        }).join('');
+                        
+                        const weekPlanned = getPlannedHoursForPeriod(emp.id, shiftDatesStr[0], shiftDatesStr[6]);
+                        
+                        return `<tr>
+                            <td style="padding:10px; border:1px solid #ddd; font-weight:bold; background:#fff;">${emp.name}<br><small style="color:#666; font-weight:normal;">Soll: ${emp.weeklyHours || 0}h | Ist: ${weekPlanned}h</small></td>
+                            ${cells}
+                        </tr>`;
                     }).join('');
                     
-                    const weekPlanned = getPlannedHoursForPeriod(emp.id, shiftDatesStr[0], shiftDatesStr[6]);
-                    
-                    return `<tr>
-                        <td style="padding:10px; border:1px solid #ddd; font-weight:bold; background:#fff;">${emp.name}<br><small style="color:#666; font-weight:normal;">Soll: ${emp.weeklyHours || 0}h | Ist: ${weekPlanned}h</small></td>
-                        ${cells}
-                    </tr>`;
+                    return groupHeader + empsHtml;
                 }).join('');
 
                 const htmlContent = `
@@ -709,6 +724,8 @@
                 const rowsHtml = reportRows.map(r => `<tr><td>${r.name}</td><td style="text-align: right;">${r.hours} h</td></tr>`).join('');
                 
                 const printWindow = window.open('', '_blank');
+                const scriptEnd = "</" + "script>";
+                
                 const htmlContent = `
                     <html>
                     <head>
@@ -748,7 +765,7 @@
                             </tfoot>
                         </table>
                         <div class="footer">MABELLE TIMER &bull; Steuer-Export</div>
-                        <script>window.onload = function() { window.print(); }<\/script>
+                        <script>window.onload = function() { window.print(); }${scriptEnd}
                     </body>
                     </html>
                 `;
@@ -758,8 +775,6 @@
             };
 
             if (loading && dbStatus === 'connecting') return <div className="h-screen flex items-center justify-center text-orange-600 font-bold bg-white"><RotateCw className="animate-spin mb-4" size={32} /> LOADING...</div>;
-
-            const currentMsg = getRelevantMessage();
 
             return (
                 <div className={`font-sans text-gray-900 ${(!activeEmployee && view === 'terminal') ? 'min-h-[100dvh] flex flex-col bg-gray-50' : 'min-h-[100dvh] bg-gray-50 pb-20'}`}>
@@ -773,8 +788,8 @@
                             {weather && (<div className="flex items-center gap-2 bg-blue-50 px-3 py-1 rounded-xl text-blue-800 text-xs font-bold border border-blue-100"><ThermometerSun size={16} /><span>{weather.current}°C</span><span className="text-blue-300">|</span><span>Max: {weather.max}°C</span></div>)}
                         </div>
                         <div className="flex gap-2">
-                           {view === 'admin' && <div className="flex gap-2"><button onClick={() => setShowSettingsModal(true)} className="px-3 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200"><Settings size={18} /></button><button onClick={() => { setView('terminal'); setSelectedEmpForDetails(null); }} className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-black uppercase border border-red-100">Exit</button></div>}
-                           {activeEmployee && <button onClick={() => { setActiveEmployee(null); setView('terminal'); }} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-xs font-black uppercase">Abmelden</button>}
+                           {view === 'admin' && <div className="flex gap-2">{hasAdminRights && <button onClick={() => setShowSettingsModal(true)} className="px-3 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200"><Settings size={18} /></button>}<button onClick={() => { setView('terminal'); setSelectedEmpForDetails(null); if(isGlobalAdmin) setIsGlobalAdmin(false); }} className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-black uppercase border border-red-100">Exit</button></div>}
+                           {activeEmployee && view !== 'admin' && <button onClick={() => { setActiveEmployee(null); setView('terminal'); }} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-xs font-black uppercase">Abmelden</button>}
                         </div>
                     </nav>
 
@@ -810,7 +825,7 @@
                             </div>
                         )}
 
-                        {activeEmployee && (
+                        {activeEmployee && view === 'terminal' && (
                             <div className="max-w-4xl mx-auto space-y-6">
                                 {currentMsg && showEmployeeMsgPopup && (
                                     <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -820,6 +835,22 @@
                                             <div className="bg-orange-50 p-6 rounded-2xl mb-8 border border-orange-100"><p className="text-xl font-bold text-gray-800 leading-snug">{currentMsg.content}</p></div>
                                             <button onClick={() => setShowEmployeeMsgPopup(false)} className="w-full bg-gray-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl"><CheckCircle2 className="inline mr-2" /> OK</button>
                                         </div>
+                                    </div>
+                                )}
+
+                                {/* Admin / Manager Access Buttons */}
+                                {(activeEmployee.accessLevel === 'admin' || activeEmployee.accessLevel === 'manager') && (
+                                    <div className="flex flex-wrap gap-4 mb-4">
+                                        {activeEmployee.accessLevel === 'admin' && (
+                                            <button onClick={() => { setView('admin'); setAdminSubView('overview'); }} className="bg-gray-900 text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-lg hover:bg-black transition flex items-center gap-2">
+                                                <Shield size={18} /> Verwaltung öffnen
+                                            </button>
+                                        )}
+                                        {activeEmployee.accessLevel === 'manager' && (
+                                            <button onClick={() => { setView('admin'); setAdminSubView('schedule'); }} className="bg-gray-900 text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-lg hover:bg-black transition flex items-center gap-2">
+                                                <CalendarClock size={18} /> Dienstplan verwalten
+                                            </button>
+                                        )}
                                     </div>
                                 )}
 
@@ -896,12 +927,14 @@
                             <div className="space-y-6 animate-in fade-in duration-500">
                                 {/* ADMIN NAVIGATION */}
                                 <div className="flex gap-6 border-b border-gray-200 mb-6">
-                                   <button 
-                                      onClick={() => { setAdminSubView('overview'); setSelectedEmpForDetails(null); }} 
-                                      className={`pb-3 font-black uppercase text-sm tracking-widest transition ${adminSubView === 'overview' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400 hover:text-gray-800'}`}
-                                   >
-                                      Übersicht
-                                   </button>
+                                   {hasAdminRights && (
+                                       <button 
+                                          onClick={() => { setAdminSubView('overview'); setSelectedEmpForDetails(null); }} 
+                                          className={`pb-3 font-black uppercase text-sm tracking-widest transition ${adminSubView === 'overview' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400 hover:text-gray-800'}`}
+                                       >
+                                          Übersicht
+                                       </button>
+                                   )}
                                    <button 
                                       onClick={() => { setAdminSubView('schedule'); setSelectedEmpForDetails(null); }} 
                                       className={`pb-3 font-black uppercase text-sm tracking-widest transition flex items-center gap-2 ${adminSubView === 'schedule' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400 hover:text-gray-800'}`}
@@ -910,7 +943,7 @@
                                    </button>
                                 </div>
 
-                                {adminSubView === 'overview' && (
+                                {adminSubView === 'overview' && hasAdminRights && (
                                    <>
                                     <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-200">
                                         <div className="flex flex-col lg:flex-row justify-between items-center gap-6">
@@ -951,7 +984,7 @@
                                             <div className="flex justify-between items-center">
                                                 <button onClick={() => setSelectedEmpForDetails(null)} className="flex items-center gap-2 text-gray-400 font-bold text-sm uppercase"><ArrowLeft size={16} /> Übersicht</button>
                                                 <div className="flex gap-2">
-                                                    <button onClick={() => { setEditEmpData({ id: selectedEmpForDetails.id, name: selectedEmpForDetails.name, pin: selectedEmpForDetails.pin, birthDate: selectedEmpForDetails.birthDate || '', overtimeBalance: getEmployeeStats(selectedEmpForDetails.id).overtimeAccount, weeklyHours: selectedEmpForDetails.weeklyHours || 40 }); setShowEditEmpModal(true); }} className="bg-gray-100 text-gray-700 px-5 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2"><UserCog size={14} /> Profil</button>
+                                                    <button onClick={() => { setEditEmpData({ id: selectedEmpForDetails.id, name: selectedEmpForDetails.name, pin: selectedEmpForDetails.pin, birthDate: selectedEmpForDetails.birthDate || '', overtimeBalance: getEmployeeStats(selectedEmpForDetails.id).overtimeAccount, weeklyHours: selectedEmpForDetails.weeklyHours || 40, primaryRole: selectedEmpForDetails.primaryRole || 'Service', accessLevel: selectedEmpForDetails.accessLevel || 'user' }); setShowEditEmpModal(true); }} className="bg-gray-100 text-gray-700 px-5 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2"><UserCog size={14} /> Profil</button>
                                                     <button onClick={() => initiateDeleteEmployee(selectedEmpForDetails.id)} className="bg-red-50 text-red-600 px-3 py-2 rounded-xl hover:bg-red-100 transition"><Trash2 size={20} /></button>
                                                 </div>
                                             </div>
@@ -1062,64 +1095,71 @@
                                                   </tr>
                                                </thead>
                                                <tbody className="divide-y divide-gray-100">
-                                                  {employees.map(emp => {
-                                                     const targetW = parseFloat(emp.weeklyHours || 0);
-                                                     const weekPlanned = parseFloat(getPlannedHoursForPeriod(emp.id, shiftDatesStr[0], shiftDatesStr[6]));
-                                                     const monthPlanned = parseFloat(getPlannedHoursForPeriod(emp.id, period.start, period.end));
-                                                     
-                                                     return (
-                                                        <tr key={emp.id} className="hover:bg-gray-50/30 transition group">
-                                                           <td className="px-6 py-4 border-r border-gray-100">
-                                                              <div className="font-bold text-gray-900 truncate">{emp.name}</div>
-                                                              <div className="text-[10px] text-gray-400 uppercase tracking-widest">Soll: {targetW}h / Woche</div>
-                                                           </td>
-                                                           {shiftDatesStr.map((dateStr, idx) => {
-                                                              const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr);
-                                                              const isAvail = availabilities.some(a => a.employeeId === emp.id && a.date === dateStr);
-                                                              
-                                                              return (
-                                                                 <td key={dateStr} className={`border-r border-gray-100 p-2 align-top ${idx===6 ? 'bg-orange-50/10' : ''}`}>
-                                                                    {shift ? (
-                                                                       <div 
-                                                                          onClick={() => setShiftData({ id: shift.id, employeeId: emp.id, date: dateStr, startTime: shift.startTime, endTime: shift.endTime, role: shift.role || 'Service' })}
-                                                                          className="bg-green-50 border border-green-200 rounded-xl p-2 cursor-pointer hover:bg-green-100 transition relative group/shift"
-                                                                       >
-                                                                          <div className="text-xs font-bold text-green-800 text-center">{shift.startTime} - {shift.endTime}</div>
-                                                                          <div className="text-[8px] uppercase tracking-wider text-green-600/80 text-center font-black mt-0.5">{shift.role || 'Service'}</div>
-                                                                          <div className="text-[9px] text-green-600 text-center font-black mt-1">{shift.calculatedHours} h</div>
-                                                                       </div>
-                                                                    ) : (
-                                                                       isAvail ? (
-                                                                           <div 
-                                                                              onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, startTime: '09:00', endTime: '17:00', role: 'Service' }); setShowShiftModal(true); }}
-                                                                              className="h-full min-h-[50px] rounded-xl border-2 border-green-300 bg-green-50 flex flex-col items-center justify-center cursor-pointer hover:bg-green-100 transition relative group/empty"
-                                                                           >
-                                                                              <span className="text-[8px] font-black uppercase text-green-600 mb-1">Verfügbar</span>
-                                                                              <Plus size={16} className="text-green-400 opacity-0 group-hover/empty:opacity-100 absolute" />
-                                                                           </div>
-                                                                       ) : (
-                                                                           <div 
-                                                                              onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, startTime: '09:00', endTime: '17:00', role: 'Service' }); setShowShiftModal(true); }}
-                                                                              className="h-full min-h-[50px] rounded-xl border border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition opacity-0 group-hover:opacity-100"
-                                                                           >
-                                                                              <Plus size={16} className="text-gray-400" />
-                                                                           </div>
-                                                                       )
-                                                                    )}
-                                                                 </td>
-                                                              );
-                                                           })}
-                                                           <td className="px-4 py-4 text-center font-black">
-                                                              <span className={weekPlanned > targetW ? 'text-red-500' : (weekPlanned === targetW ? 'text-green-500' : 'text-gray-800')}>
-                                                                 {weekPlanned}h
-                                                              </span>
-                                                           </td>
-                                                           <td className="px-4 py-4 text-center font-black bg-orange-50/30 text-orange-600 border-l border-gray-100">
-                                                              {monthPlanned}h
-                                                           </td>
-                                                        </tr>
-                                                     );
-                                                  })}
+                                                  {groupedEmployees.map(group => (
+                                                      <React.Fragment key={group.role}>
+                                                          <tr className="bg-gray-100 border-b border-gray-200">
+                                                              <td colSpan="10" className="px-6 py-2 text-xs font-black text-gray-500 uppercase tracking-widest">{group.role}</td>
+                                                          </tr>
+                                                          {group.emps.map(emp => {
+                                                             const targetW = parseFloat(emp.weeklyHours || 0);
+                                                             const weekPlanned = parseFloat(getPlannedHoursForPeriod(emp.id, shiftDatesStr[0], shiftDatesStr[6]));
+                                                             const monthPlanned = parseFloat(getPlannedHoursForPeriod(emp.id, period.start, period.end));
+                                                             
+                                                             return (
+                                                                <tr key={emp.id} className="hover:bg-gray-50/30 transition group">
+                                                                   <td className="px-6 py-4 border-r border-gray-100">
+                                                                      <div className="font-bold text-gray-900 truncate">{emp.name}</div>
+                                                                      <div className="text-[10px] text-gray-400 uppercase tracking-widest">Soll: {targetW}h / Woche</div>
+                                                                   </td>
+                                                                   {shiftDatesStr.map((dateStr, idx) => {
+                                                                      const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr);
+                                                                      const isAvail = availabilities.some(a => a.employeeId === emp.id && a.date === dateStr);
+                                                                      
+                                                                      return (
+                                                                         <td key={dateStr} className={`border-r border-gray-100 p-2 align-top ${idx===6 ? 'bg-orange-50/10' : ''}`}>
+                                                                            {shift ? (
+                                                                               <div 
+                                                                                  onClick={() => setShiftData({ id: shift.id, employeeId: emp.id, date: dateStr, startTime: shift.startTime, endTime: shift.endTime, role: shift.role || emp.primaryRole || 'Service' })}
+                                                                                  className="bg-green-50 border border-green-200 rounded-xl p-2 cursor-pointer hover:bg-green-100 transition relative group/shift"
+                                                                               >
+                                                                                  <div className="text-xs font-bold text-green-800 text-center">{shift.startTime} - {shift.endTime}</div>
+                                                                                  <div className="text-[8px] uppercase tracking-wider text-green-600/80 text-center font-black mt-0.5">{shift.role || emp.primaryRole || 'Service'}</div>
+                                                                                  <div className="text-[9px] text-green-600 text-center font-black mt-1">{shift.calculatedHours} h</div>
+                                                                               </div>
+                                                                            ) : (
+                                                                               isAvail ? (
+                                                                                   <div 
+                                                                                      onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, startTime: '09:00', endTime: '17:00', role: emp.primaryRole || 'Service' }); setShowShiftModal(true); }}
+                                                                                      className="h-full min-h-[50px] rounded-xl border-2 border-green-300 bg-green-50 flex flex-col items-center justify-center cursor-pointer hover:bg-green-100 transition relative group/empty"
+                                                                                   >
+                                                                                      <span className="text-[8px] font-black uppercase text-green-600 mb-1">Verfügbar</span>
+                                                                                      <Plus size={16} className="text-green-400 opacity-0 group-hover/empty:opacity-100 absolute" />
+                                                                                   </div>
+                                                                               ) : (
+                                                                                   <div 
+                                                                                      onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, startTime: '09:00', endTime: '17:00', role: emp.primaryRole || 'Service' }); setShowShiftModal(true); }}
+                                                                                      className="h-full min-h-[50px] rounded-xl border border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition opacity-0 group-hover:opacity-100"
+                                                                                   >
+                                                                                      <Plus size={16} className="text-gray-400" />
+                                                                                   </div>
+                                                                               )
+                                                                            )}
+                                                                         </td>
+                                                                      );
+                                                                   })}
+                                                                   <td className="px-4 py-4 text-center font-black">
+                                                                      <span className={weekPlanned > targetW ? 'text-red-500' : (weekPlanned === targetW ? 'text-green-500' : 'text-gray-800')}>
+                                                                         {weekPlanned}h
+                                                                      </span>
+                                                                   </td>
+                                                                   <td className="px-4 py-4 text-center font-black bg-orange-50/30 text-orange-600 border-l border-gray-100">
+                                                                      {monthPlanned}h
+                                                                   </td>
+                                                                </tr>
+                                                             );
+                                                          })}
+                                                      </React.Fragment>
+                                                  ))}
                                                </tbody>
                                             </table>
                                          </div>
@@ -1282,6 +1322,29 @@
                                     <form onSubmit={handleEditEmployee} className="space-y-4">
                                         <input value={editEmpData.name} onChange={e=>setEditEmpData({...editEmpData, name:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="Name" />
                                         <input value={editEmpData.pin} onChange={e=>setEditEmpData({...editEmpData, pin:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="PIN" />
+                                        
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="relative">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Haupt-Station</label>
+                                                <select required value={editEmpData.primaryRole} onChange={(e) => setEditEmpData({...editEmpData, primaryRole: e.target.value})} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold">
+                                                    <option value="Service">Service</option>
+                                                    <option value="Bar">Bar</option>
+                                                    <option value="Küche">Küche</option>
+                                                    <option value="Runner">Runner</option>
+                                                    <option value="Garderobe">Garderobe</option>
+                                                    <option value="Event">Event</option>
+                                                </select>
+                                            </div>
+                                            <div className="relative">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Zugriffsrechte</label>
+                                                <select required value={editEmpData.accessLevel} onChange={(e) => setEditEmpData({...editEmpData, accessLevel: e.target.value})} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold">
+                                                    <option value="user">Mitarbeiter</option>
+                                                    <option value="manager">Dienstplaner</option>
+                                                    <option value="admin">Admin</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
                                         <div className="grid grid-cols-2 gap-4">
                                            <div><label className="text-xs font-bold text-gray-400 ml-1">Wochenstunden (Soll)</label><input type="number" step="0.5" required value={editEmpData.weeklyHours} onChange={e=>setEditEmpData({...editEmpData, weeklyHours:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="z.B. 40" /></div>
                                            <div><label className="text-xs font-bold text-gray-400 ml-1">Konto-Korrektur</label><input type="number" step="0.01" value={editEmpData.overtimeBalance} onChange={e=>setEditEmpData({...editEmpData, overtimeBalance:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="z.B. 2.5" /></div>
@@ -1359,8 +1422,31 @@
                                     <form onSubmit={handleAddEmployee} className="space-y-4">
                                         <input type="text" placeholder="Name" required value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" />
                                         <input type="text" placeholder="PIN (4 Zahlen)" required maxLength={4} value={newEmpPin} onChange={(e) => setNewEmpPin(e.target.value.replace(/\D/g, ''))} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-mono text-2xl text-center" />
-                                        <div className="relative"><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Geburtsdatum (Optional)</label><input type="date" value={newEmpBirthDate} onChange={(e) => setNewEmpBirthDate(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" /></div>
+                                        
                                         <div className="grid grid-cols-2 gap-4">
+                                            <div className="relative">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Haupt-Station</label>
+                                                <select required value={newEmpRole} onChange={(e) => setNewEmpRole(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold">
+                                                    <option value="Service">Service</option>
+                                                    <option value="Bar">Bar</option>
+                                                    <option value="Küche">Küche</option>
+                                                    <option value="Runner">Runner</option>
+                                                    <option value="Garderobe">Garderobe</option>
+                                                    <option value="Event">Event</option>
+                                                </select>
+                                            </div>
+                                            <div className="relative">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Zugriffsrechte</label>
+                                                <select required value={newEmpAccess} onChange={(e) => setNewEmpAccess(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold">
+                                                    <option value="user">Mitarbeiter</option>
+                                                    <option value="manager">Dienstplaner</option>
+                                                    <option value="admin">Admin</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                           <div className="relative"><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Geburtsdatum</label><input type="date" value={newEmpBirthDate} onChange={(e) => setNewEmpBirthDate(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" /></div>
                                            <div className="relative"><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Soll-Stunden (Woche)</label><input type="number" step="0.5" required value={newEmpWeeklyHours} onChange={(e) => setNewEmpWeeklyHours(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" placeholder="z.B. 40" /></div>
                                         </div>
                                         <button type="submit" className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-lg">ANLEGEN</button>
