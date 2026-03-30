@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>MABELLE TIMER</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- FIX: Verwendung einer festen, stabilen Babel-Version (7.22.20) um den "esmodules" Fehler zu beheben -->
+    <script src="https://unpkg.com/@babel/standalone@7.22.20/babel.min.js"></script>
     
     <!-- Import Map für React & Icons -->
     <script type="importmap">
@@ -23,6 +25,7 @@
         body { overscroll-behavior-y: contain; -webkit-tap-highlight-color: transparent; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .pin-dot { transition: all 0.2s ease; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans select-none">
@@ -44,10 +47,10 @@
             FileText, Printer, Wallet, ChevronDown, CheckCircle2, Calculator, 
             UserCog, Power, MessageSquare, StickyNote, Megaphone, Send, User, 
             Cake, CloudSun, ThermometerSun, Eye, AlertTriangle, RotateCw, Settings, 
-            KeyRound, PiggyBank, MapPin, Siren, Moon, History, Plus, Minus, ArrowRight 
+            KeyRound, PiggyBank, MapPin, Siren, Moon, History, Plus, Minus, ArrowRight, ShieldCheck 
         } from 'lucide-react';
 
-        // --- FIREBASE KONFIGURATION ---
+        // --- FIREBASE KONFIGURATION (Vollständig eingetragen) ---
         const firebaseConfig = {
             apiKey: "AIzaSyCg1oov_QwqcIjnnZ-UuuLdgkYTfVdLwWI",
             authDomain: "mabelle-timer.firebaseapp.com",
@@ -123,6 +126,26 @@
             return { start: toIso(start), end: toIso(end) };
         };
 
+        const getPeriodOptions = () => {
+            const options = [];
+            const today = new Date();
+            for (let i = -12; i <= 2; i++) {
+                const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+                const year = d.getFullYear();
+                const month = d.getMonth();
+                const start = new Date(year, month, 16);
+                const end = new Date(year, month + 1, 15);
+                const toIso = (dateObj) => {
+                    const offset = dateObj.getTimezoneOffset();
+                    const local = new Date(dateObj.getTime() - (offset*60*1000));
+                    return local.toISOString().split('T')[0];
+                };
+                const label = `${formatDate(start)} bis ${formatDate(end)}`;
+                options.push({ label: label, value: JSON.stringify({ start: toIso(start), end: toIso(end) }), startIso: toIso(start) });
+            }
+            return options;
+        };
+
         const checkUpcomingBirthdays = (employees) => {
             const today = new Date();
             const nextWeek = new Date();
@@ -172,8 +195,6 @@
         function App() {
             const [user, setUser] = useState(null);
             const [view, setView] = useState('terminal'); 
-            const [showAdminLogin, setShowAdminLogin] = useState(false);
-            const [adminPinInput, setAdminPinInput] = useState('');
             const [activeEmployee, setActiveEmployee] = useState(null);
             
             // Modals
@@ -227,6 +248,7 @@
             const [manualOvertimeAmount, setManualOvertimeAmount] = useState('');
             const [manualOvertimeNote, setManualOvertimeNote] = useState('');
 
+            const periodOptions = useMemo(() => getPeriodOptions(), []);
             const birthdayAlerts = useMemo(() => checkUpcomingBirthdays(employees), [employees]);
 
             // Effects (Clock, Weather, Auth, Data)
@@ -261,16 +283,26 @@
                     const unsubEmp = onSnapshot(empRef, (snap) => { setEmployees(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setLoading(false); setDbStatus('active'); });
                     const unsubLogs = onSnapshot(logsRef, (snap) => setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                     const unsubSett = onSnapshot(settRef, (snap) => setSettlements(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-                    const unsubMsg = onSnapshot(msgRef, (snap) => { const msgs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })); msgs.sort((a,b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)); setBossMessages(msgs); });
-                    const unsubSec = onSnapshot(secRef, (snap) => { const secLogs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })); secLogs.sort((a,b) => (b.timestamp?.toMillis?.() || 0) - (a.timestamp?.toMillis?.() || 0)); setSecurityLogs(secLogs); });
-                    const unsubSettings = onSnapshot(settingsDoc, (snap) => { if (snap.exists()) { const data = snap.data(); if (data.adminPin) setAdminPin(data.adminPin); } else { setDoc(settingsDoc, { adminPin: ADMIN_PIN_DEFAULT }, { merge: true }); } });
+                    const unsubMsg = onSnapshot(msgRef, (snap) => {
+                        const msgs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        msgs.sort((a,b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+                        setBossMessages(msgs);
+                    });
+                    const unsubSec = onSnapshot(secRef, (snap) => {
+                        const secLogs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        secLogs.sort((a,b) => (b.timestamp?.toMillis?.() || 0) - (a.timestamp?.toMillis?.() || 0));
+                        setSecurityLogs(secLogs);
+                    });
+                    const unsubSettings = onSnapshot(settingsDoc, (snap) => {
+                        if (snap.exists()) { const data = snap.data(); if (data.adminPin) setAdminPin(data.adminPin); } 
+                        else { setDoc(settingsDoc, { adminPin: ADMIN_PIN_DEFAULT }, { merge: true }); }
+                    });
                     return () => { unsubEmp(); unsubLogs(); unsubSett(); unsubMsg(); unsubSec(); unsubSettings(); };
                 } catch(e) { setDbStatus('error'); }
             }, [user]);
 
             const showStatus = (msg, type) => { setStatusMsg({ msg, type }); setTimeout(() => setStatusMsg(null), 3000); };
 
-            // Stats Calculation
             const getEmployeeStats = (employeeId, filterPeriod = period) => {
                 const startLimit = new Date(filterPeriod.start).getTime();
                 const endLimit = new Date(filterPeriod.end);
@@ -284,27 +316,46 @@
                 const totalAvailable = overtimeAccount + openHours;
                 return { workedHours: workedHours.toFixed(2), openHours: openHours.toFixed(2), overtimeAccount: overtimeAccount.toFixed(2), totalAvailable: totalAvailable.toFixed(2), logs: periodLogs.sort((a,b) => safeDate(b.startTime) - safeDate(a.startTime)) };
             };
-            const getSettlementHistory = (employeeId) => { return settlements.filter(s => s.employeeId === employeeId).sort((a,b) => { const dateA = a.settledAt ? safeDate(a.settledAt) : new Date(a.date); const dateB = b.settledAt ? safeDate(b.settledAt) : new Date(b.date); return dateB - dateA; }); };
+            
+            const getSettlementHistory = (employeeId) => {
+                return settlements.filter(s => s.employeeId === employeeId).sort((a,b) => {
+                    const dateA = a.settledAt ? safeDate(a.settledAt) : new Date(a.date);
+                    const dateB = b.settledAt ? safeDate(b.settledAt) : new Date(b.date);
+                    return dateB - dateA;
+                });
+            };
+
             const getActiveLog = (employeeId) => logs.find(l => l.employeeId === employeeId && !l.endTime);
             const getRelevantMessage = () => !activeEmployee ? null : bossMessages.find(msg => !msg.recipientId || msg.recipientId === 'all' || msg.recipientId === activeEmployee.id);
 
             // Logic Handlers
-            const handleAdminAuth = (e) => { if (e) e.preventDefault(); if (adminPinInput === adminPin) { setView('admin'); setShowAdminLogin(false); setAdminPinInput(''); } else { showStatus("Falscher PIN!", "error"); setAdminPinInput(''); } };
             const handleChangeAdminPin = async (e) => { e.preventDefault(); if (newAdminPinInput.length < 4) { showStatus("PIN zu kurz", "error"); return; } try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { adminPin: newAdminPinInput }, { merge: true }); setAdminPin(newAdminPinInput); setNewAdminPinInput(''); setShowSettingsModal(false); showStatus("PIN geändert!", "success"); } catch(err) { showStatus("Fehler", "error"); } };
             
             const handlePinEntry = (val) => {
-                let nextPin = pin;
                 if (val === 'C') { setPin(''); return; }
-                if (val === 'GO') {
-                    if (pin === adminPin) { setView('admin'); setPin(''); return; }
-                    const employee = employees.find(emp => emp.pin === pin);
-                    if (employee) { setActiveEmployee(employee); setPeriod(getDefaultPeriod()); setPin(''); const hasMsg = bossMessages.find(msg => !msg.recipientId || msg.recipientId === 'all' || msg.recipientId === employee.id); if(hasMsg) setShowEmployeeMsgPopup(true); return; }
-                    showStatus("Ungültiger PIN", "error"); setPin(''); return;
+                
+                const nextPin = pin + val;
+                setPin(nextPin);
+                
+                // Admin Login automatisch
+                if (nextPin === adminPin) { 
+                    setView('admin'); 
+                    setPin(''); 
+                    return; 
                 }
-                nextPin = pin + val; setPin(nextPin);
-                if (nextPin === adminPin) { setView('admin'); setPin(''); return; }
+                
+                // Mitarbeiter Login automatisch
                 const employee = employees.find(emp => emp.pin === nextPin);
-                if (employee) { if (String(adminPin).startsWith(nextPin) && nextPin !== String(adminPin)) { return; } setActiveEmployee(employee); setPeriod(getDefaultPeriod()); setPin(''); const hasMsg = bossMessages.find(msg => !msg.recipientId || msg.recipientId === 'all' || msg.recipientId === employee.id); if(hasMsg) setShowEmployeeMsgPopup(true); return; }
+                if (employee) { 
+                    setActiveEmployee(employee); 
+                    setPeriod(getDefaultPeriod()); 
+                    setPin(''); 
+                    const hasMsg = bossMessages.find(msg => !msg.recipientId || msg.recipientId === 'all' || msg.recipientId === employee.id); 
+                    if(hasMsg) setShowEmployeeMsgPopup(true); 
+                    return; 
+                }
+                
+                // PIN zurücksetzen, falls sie zu lang wird
                 if (nextPin.length > 10) setPin('');
             };
 
@@ -323,26 +374,47 @@
             const handleAdminStopShift = async (targetEmpId) => { if (!user) return; const activeLog = logs.find(l => l.employeeId === targetEmpId && !l.endTime); if (activeLog) { try { const now = Timestamp.now(); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', activeLog.id), { endTime: now, calculatedHours: calculateHours(activeLog.startTime, now), note: 'Admin Stop' }); showStatus(`Schicht beendet`, "success"); } catch (err) { showStatus("Fehler", "error"); } } };
             const handleDeleteLog = async (logId) => { if(!confirm("Eintrag wirklich löschen?")) return; try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', logId)); showStatus("Eintrag gelöscht", "success"); } catch(err) { showStatus("Fehler", "error"); } };
             const handleDeleteSecurityLog = async (logId) => { if(!confirm("Eintrag löschen?")) return; try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'security_logs', logId)); } catch(err) { console.error(err); } };
-            
-            const initiateDeleteEmployee = (id) => { setShowDeleteConfirm({ id, type: 'EMPLOYEE' }); setConfirmPinInput(''); };
-            const executeDeleteEmployee = async (e) => {
-                e.preventDefault(); if (confirmPinInput !== adminPin) { showStatus("Falsche PIN!", "error"); return; }
-                const id = showDeleteConfirm.id;
+            const handleDeleteEmployee = async (id) => {
+                const promptPin = prompt("Mitarbeiter löschen: Bitte Admin PIN eingeben:");
+                if (promptPin !== adminPin) {
+                    showStatus("Falsche PIN! Löschen abgebrochen.", "error");
+                    return;
+                }
+                if (!confirm(`Mitarbeiter unwiderruflich löschen? Alle Zeiten gehen verloren!`)) return;
                 try {
                     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'employees', id));
-                    const logsToDelete = logs.filter(l => l.employeeId === id); const batch = writeBatch(db);
-                    logsToDelete.forEach(log => { batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', log.id)); });
-                    if (logsToDelete.length > 0) await batch.commit();
-                    showStatus("Mitarbeiter gelöscht", "success"); setSelectedEmpForDetails(null); setShowDeleteConfirm(null);
-                } catch (err) { showStatus("Fehler", "error"); }
+                    const logsToDelete = logs.filter(l => l.employeeId === id);
+                    const batch = writeBatch(db);
+                    logsToDelete.forEach(log => {
+                        batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', log.id));
+                    });
+                    if (logsToDelete.length > 0) {
+                        await batch.commit();
+                    }
+                    showStatus("Mitarbeiter & Daten gelöscht", "success");
+                    setSelectedEmpForDetails(null);
+                } catch (err) {
+                    showStatus("Fehler beim Löschen", "error");
+                    console.error(err);
+                }
             };
 
-            const initiateSystemReset = () => { setShowDeleteConfirm({ id: 'SYSTEM_RESET' }); setConfirmPinInput(''); };
+            const initiateSystemReset = () => {
+                setShowDeleteConfirm({ id: 'SYSTEM_RESET' });
+                setConfirmPinInput('');
+            };
+
             const executeSystemReset = async (e) => {
-                e.preventDefault(); if (confirmPinInput !== adminPin) { showStatus("Falsche PIN!", "error"); return; }
+                e.preventDefault();
+                if (confirmPinInput !== adminPin) {
+                    showStatus("Falsche PIN! Abbruch.", "error");
+                    return;
+                }
                 const allDocs = [...employees.map(e => ({col:'employees',id:e.id})), ...logs.map(l => ({col:'timelogs',id:l.id})), ...settlements.map(s => ({col:'settlements',id:s.id})), ...bossMessages.map(m => ({col:'messages',id:m.id})), ...securityLogs.map(s => ({col:'security_logs', id: s.id}))]; 
                 for(const i of allDocs) try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', i.col, i.id)); } catch(e){} 
-                showStatus("System zurückgesetzt", "success"); setShowDeleteConfirm(null); setView('terminal'); 
+                showStatus("System zurückgesetzt", "success");
+                setShowDeleteConfirm(null);
+                setView('terminal'); 
             };
 
             const handleSaveEdit = async (e) => { e.preventDefault(); if (!editingLog) return; try { const start = new Date(`${editingLog.date}T${editingLog.startTimeStr}`); let end = new Date(`${editingLog.date}T${editingLog.endTimeStr}`); if (end < start) end.setDate(end.getDate() + 1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', editingLog.id), { startTime: Timestamp.fromDate(start), endTime: Timestamp.fromDate(end), date: editingLog.date, calculatedHours: calculateHours(start, end), note: editingLog.note || '' }); setEditingLog(null); showStatus("Gespeichert", "success"); } catch (err) { showStatus("Fehler", "error"); } };
@@ -352,9 +424,7 @@
             const handlePostBossMessage = async (e) => { e.preventDefault(); if(!newBossMessage.trim()) return; await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'messages'), { content: newBossMessage, createdAt: Timestamp.now(), author: 'Admin', recipientId: msgRecipient }); setNewBossMessage(''); setMsgRecipient('all'); setShowBossMsgModal(false); showStatus("Gesendet", "success"); };
             const handleDeleteMessage = async (id) => { if(confirm("Löschen?")) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'messages', id)); };
             const handleManualLogSubmit = async (e) => { e.preventDefault(); const emp = employees.find(e => e.id === manualLogData.employeeId); const s = new Date(`${manualLogData.date}T${manualLogData.startTime}`); let end = new Date(`${manualLogData.date}T${manualLogData.endTime}`); if (end < s) end.setDate(end.getDate() + 1); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'timelogs'), { employeeId: emp.id, employeeName: emp.name, startTime: Timestamp.fromDate(s), endTime: Timestamp.fromDate(end), date: manualLogData.date, calculatedHours: calculateHours(s, end), note: 'Manuell', isSettled: false }); setShowManualLog(false); showStatus("Gebucht", "success"); };
-            const handleManualOvertimeSubmit = async (e) => { e.preventDefault(); const amount = parseFloat(manualOvertimeAmount); if (!amount || isNaN(amount)) return; try { const batch = writeBatch(db); const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'employees', selectedEmpForDetails.id); const currentBalance = parseFloat(employees.find(emp => emp.id === selectedEmpForDetails.id)?.overtimeBalance || 0); const newBalance = currentBalance + amount; batch.update(empRef, { overtimeBalance: newBalance }); const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements')); batch.set(settRef, { employeeId: selectedEmpForDetails.id, date: new Date().toISOString().split('T')[0], type: 'manual_adjustment', amount: amount, note: manualOvertimeNote, newBalance: newBalance, settledAt: Timestamp.now() }); await batch.commit(); setManualOvertimeAmount(''); setManualOvertimeNote(''); setSelectedEmpForDetails(prev => ({...prev, overtimeBalance: newBalance})); showStatus("Korrektur gespeichert", "success"); } catch(err) { showStatus("Fehler", "error"); console.error(err); } };
-
-            // PDF Export Handler (FIXED)
+            
             const handlePrintTaxReport = () => {
                 const startLimit = new Date(period.start).getTime();
                 const endLimit = new Date(period.end).setHours(23, 59, 59, 999);
@@ -368,11 +438,10 @@
                 });
                 const totalPeriodHours = reportRows.reduce((acc, curr) => acc + parseFloat(curr.hours), 0);
                 
-                // Building HTML string safely
                 const rowsHtml = reportRows.map(r => `<tr><td>${r.name}</td><td style="text-align: right;">${r.hours} h</td></tr>`).join('');
                 
                 const printWindow = window.open('', '_blank');
-                const scriptEnd = "</" + "script>"; // Escaping script tag
+                const scriptEnd = "</" + "script>";
                 
                 const htmlContent = `
                     <html>
@@ -421,7 +490,7 @@
                 printWindow.document.write(htmlContent);
                 printWindow.document.close();
             };
-            
+
             const handlePrintSingle = (emp) => {
                  const stats = getEmployeeStats(emp.id, period);
                  const rows = stats.logs.map(l => `<tr><td>${formatDate(l.date)}</td><td>${safeDate(l.startTime).toLocaleTimeString()} - ${l.endTime ? safeDate(l.endTime).toLocaleTimeString() : '...'}</td><td>${l.calculatedHours} h</td></tr>`).join('');
@@ -431,14 +500,35 @@
                  printWindow.document.write(html);
                  printWindow.document.close();
             };
+            
+            const handleManualOvertimeSubmit = async (e) => {
+                e.preventDefault();
+                const amount = parseFloat(manualOvertimeAmount);
+                if (!amount || isNaN(amount)) return;
+                try {
+                    const batch = writeBatch(db);
+                    const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'employees', selectedEmpForDetails.id);
+                    const currentBalance = parseFloat(employees.find(emp => emp.id === selectedEmpForDetails.id)?.overtimeBalance || 0);
+                    const newBalance = currentBalance + amount;
+                    batch.update(empRef, { overtimeBalance: newBalance });
+                    const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements'));
+                    batch.set(settRef, {
+                        employeeId: selectedEmpForDetails.id, date: new Date().toISOString().split('T')[0], type: 'manual_adjustment', amount: amount, note: manualOvertimeNote, newBalance: newBalance, settledAt: Timestamp.now()
+                    });
+                    await batch.commit();
+                    setManualOvertimeAmount(''); setManualOvertimeNote('');
+                    setSelectedEmpForDetails(prev => ({...prev, overtimeBalance: newBalance}));
+                    showStatus("Korrektur gespeichert", "success");
+                } catch(err) { showStatus("Fehler", "error"); console.error(err); }
+            };
 
             if (loading && dbStatus === 'connecting') return <div className="h-screen flex items-center justify-center text-orange-600 font-bold bg-white"><RotateCw className="animate-spin mb-4" size={32} /> LOADING...</div>;
 
             const currentMsg = getRelevantMessage();
 
             return (
-                <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-20">
-                    <nav className="bg-white border-b border-gray-200 p-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
+                <div className={`font-sans text-gray-900 ${(!activeEmployee && view === 'terminal') ? 'h-[100dvh] overflow-hidden flex flex-col bg-gray-50' : 'min-h-[100dvh] bg-gray-50 pb-20'}`}>
+                    <nav className="bg-white border-b border-gray-200 p-4 flex justify-between items-center sticky top-0 z-10 shadow-sm flex-none">
                         <div className="flex items-center gap-3">
                             <div className="bg-orange-600 p-2 rounded-xl"><Clock className="text-white" size={24} /></div>
                             <div><h1 className="text-lg font-black tracking-tight uppercase">MABELLE<span className="text-orange-600">-TIMER</span></h1><div className="flex items-center gap-1.5"><div className={`w-2 h-2 rounded-full ${dbStatus === 'active' || dbStatus === 'synced' ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`}></div><span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{dbStatus==='error'?'OFFLINE':'ONLINE'}</span></div></div>
@@ -453,20 +543,32 @@
                         </div>
                     </nav>
 
-                    <main className="max-w-6xl mx-auto p-4 md:p-8">
+                    <main className={`mx-auto w-full max-w-6xl ${(!activeEmployee && view === 'terminal') ? 'flex-1 flex flex-col p-4 overflow-hidden' : 'p-4 md:p-8'}`}>
                         {statusMsg && <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 ${statusMsg.type === 'success' ? 'bg-gray-900 text-white' : 'bg-red-600 text-white'}`}><p className="font-bold text-sm">{statusMsg.msg}</p></div>}
 
                         {!activeEmployee && view === 'terminal' && (
-                            <div className="flex flex-col items-center justify-center mt-10">
-                                <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-md border border-gray-100 text-center">
-                                    <div className="mb-10"><h2 className="text-4xl font-black text-gray-900 mb-2 uppercase">MABELLE</h2><p className="text-orange-600 text-2xl font-black uppercase tracking-[0.2em] mt-2">TIMER</p></div>
-                                    <div className="space-y-8">
-                                        <div className="flex justify-center gap-4 h-4 items-center">
-                                            {pin.length > 0 ? pin.split('').map((_, i) => (<div key={i} className="w-4 h-4 rounded-full bg-gray-300 animate-in zoom-in duration-200"></div>)) : <span className="text-gray-300 text-xs font-bold uppercase tracking-widest">Bitte PIN eingeben</span>}
+                            <div className="flex-1 flex flex-col items-center justify-center">
+                                <div className="bg-white p-6 sm:p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm border border-gray-100 text-center relative overflow-hidden">
+                                    <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-orange-400 to-orange-600"></div>
+                                    <div className="mb-8 mt-2">
+                                        <h2 className="text-4xl font-black text-gray-900 mb-1 tracking-tighter uppercase">Mabelle</h2>
+                                        <p className="text-orange-600 text-xs font-black uppercase tracking-[0.3em]">Timer</p>
+                                    </div>
+                                    <div className="space-y-6">
+                                        <div className="flex justify-center gap-3 h-6 items-center">
+                                            {pin.length > 0 ? pin.split('').map((_, i) => (
+                                                <div key={i} className="w-4 h-4 rounded-full bg-orange-600 shadow-md animate-in zoom-in duration-100"></div>
+                                            )) : (
+                                                <span className="text-gray-300 text-xs font-bold uppercase tracking-widest">Bitte PIN eingeben</span>
+                                            )}
                                         </div>
-                                        <div className="grid grid-cols-3 gap-4">{[1,2,3,4,5,6,7,8,9,'C',0].map((val) => (<button key={val} onClick={() => handlePinEntry(val)} className={`h-20 rounded-3xl text-3xl font-black transition active:scale-90 flex items-center justify-center ${val === 'C' ? 'bg-gray-100 text-gray-400' : 'bg-gray-100 text-gray-900'}`}>{val}</button>))}
-                                        {/* OK BUTTON FOR PIN COLLISION */}
-                                        <button onClick={() => handlePinEntry('GO')} className="h-20 rounded-3xl text-3xl font-black transition active:scale-90 flex items-center justify-center bg-green-500 text-white shadow-xl"><ArrowRight size={32} /></button>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            {[1,2,3,4,5,6,7,8,9].map((val) => (
+                                                <button key={val} onClick={() => handlePinEntry(val)} className="h-16 sm:h-20 rounded-3xl text-2xl sm:text-3xl font-black transition-all active:scale-95 flex items-center justify-center bg-gray-50 text-gray-900 hover:bg-gray-100 hover:shadow-sm">{val}</button>
+                                            ))}
+                                            <button onClick={() => handlePinEntry('C')} className="h-16 sm:h-20 rounded-3xl text-xl sm:text-2xl font-black transition-all active:scale-95 flex items-center justify-center bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-red-500">C</button>
+                                            <button onClick={() => handlePinEntry(0)} className="h-16 sm:h-20 rounded-3xl text-2xl sm:text-3xl font-black transition-all active:scale-95 flex items-center justify-center bg-gray-50 text-gray-900 hover:bg-gray-100 hover:shadow-sm">0</button>
+                                            <button onClick={() => handlePinEntry('GO')} className="h-16 sm:h-20 rounded-3xl text-2xl sm:text-3xl font-black transition-all active:scale-95 flex items-center justify-center bg-gray-900 text-white shadow-xl hover:bg-black"><ArrowRight size={28} strokeWidth={3} /></button>
                                         </div>
                                     </div>
                                 </div>
@@ -618,9 +720,34 @@
                                         </div>
                                     </div>
                                 )}
-                                {/* SYSTEM RESET UNTEN, VERSTECKT */}
-                                <div className="flex justify-center mt-12 mb-8 opacity-20 hover:opacity-100 transition">
-                                   <button onClick={initiateSystemReset} className="text-gray-400 text-xs font-medium hover:text-red-600 flex items-center gap-1">RESET</button>
+                                <div className="flex justify-center mt-12 mb-8 opacity-20 hover:opacity-100 transition"><button onClick={initiateSystemReset} className="bg-red-50 text-red-600 px-6 py-3 rounded-full text-xs font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition flex items-center gap-2 border border-red-100"><AlertTriangle size={14} /> System zurücksetzen</button></div>
+                            </div>
+                        )}
+
+                        {/* DELETE CONFIRMATION MODAL */}
+                        {showDeleteConfirm && (
+                            <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
+                                <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h2 className="text-xl font-black text-red-600">Sicherheits-Check</h2>
+                                        <button onClick={() => setShowDeleteConfirm(null)} className="text-gray-400"><X size={24}/></button>
+                                    </div>
+                                    <p className="text-sm font-bold text-gray-600 mb-6 text-center">
+                                        {showDeleteConfirm.id === 'SYSTEM_RESET' ? 
+                                            "ACHTUNG: ALLE DATEN WERDEN GELÖSCHT! Dies kann nicht rückgängig gemacht werden." : 
+                                            "Mitarbeiter und alle Zeiten unwiderruflich löschen?"}
+                                    </p>
+                                    <form onSubmit={showDeleteConfirm.id === 'SYSTEM_RESET' ? executeSystemReset : executeDeleteEmployee} className="space-y-4">
+                                        <input 
+                                            type="password" 
+                                            placeholder="Admin PIN eingeben" 
+                                            value={confirmPinInput} 
+                                            onChange={(e) => setConfirmPinInput(e.target.value)} 
+                                            className="w-full px-5 py-4 bg-red-50 border-2 border-red-100 rounded-2xl font-mono text-2xl text-center outline-none focus:border-red-500" 
+                                            autoFocus
+                                        />
+                                        <button className="w-full bg-red-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-red-700 transition">BESTÄTIGEN & LÖSCHEN</button>
+                                    </form>
                                 </div>
                             </div>
                         )}
@@ -632,18 +759,6 @@
                                     <div className="bg-red-50 p-4 rounded-xl border border-red-100 text-xs text-red-800 mb-4 font-medium">Hier werden Versuche protokolliert, die Schicht außerhalb des Radius zu starten/beenden.</div>
                                     <div className="space-y-3 max-h-96 overflow-y-auto">
                                         {securityLogs.length === 0 ? <p className="text-center text-gray-400 py-10 italic">Keine Vorfälle gemeldet</p> : securityLogs.map(log => (<div key={log.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-between items-start"><div><p className="font-bold text-gray-800">{log.employeeName}</p><p className="text-xs text-red-500 font-bold mt-1">{log.reason}</p><p className="text-[10px] text-gray-400 mt-2">{safeDate(log.timestamp).toLocaleString('de-DE')}</p></div><button onClick={() => handleDeleteSecurityLog(log.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 size={16}/></button></div>))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {showAdminLogin && (
-                            <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                                <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-xs">
-                                    <h2 className="text-xl font-bold uppercase mb-6 flex justify-between">Admin <X className="cursor-pointer" onClick={() => setShowAdminLogin(false)}/></h2>
-                                    <div className="space-y-4 text-center">
-                                        <div className="h-4 flex justify-center gap-4 items-center">{adminPinInput.length > 0 ? adminPinInput.split('').map((_, i) => (<div key={i} className="w-4 h-4 rounded-full bg-gray-800 animate-in zoom-in duration-200"></div>)) : <span className="text-gray-300 text-xs font-bold uppercase tracking-widest">Bitte PIN eingeben</span>}</div>
-                                        <div className="grid grid-cols-3 gap-4">{[1,2,3,4,5,6,7,8,9,'C',0,'OK'].map(v=><button key={v} onClick={()=>{if(v==='C')setAdminPinInput('');else if(v==='OK')handleAdminAuth();else if(adminPinInput.length<20)setAdminPinInput(p=>p+v)}} className={`h-16 rounded-2xl text-xl font-black ${v==='OK'?'bg-gray-900 text-white':'bg-gray-50'}`}>{v}</button>)}</div>
                                     </div>
                                 </div>
                             </div>
@@ -849,7 +964,12 @@
                             </div>
                         )}
                     </main>
-                    <footer className="py-12 text-center"><p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.4em]">MABELLE &bull; ID: {appId}</p></footer>
+                    
+                    {(!(!activeEmployee && view === 'terminal')) && (
+                        <footer className="py-12 text-center flex-none">
+                            <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.4em]">MABELLE &bull; ID: {appId}</p>
+                        </footer>
+                    )}
                 </div>
             );
         }
