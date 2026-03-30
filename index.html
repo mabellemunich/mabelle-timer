@@ -118,6 +118,26 @@
             return { start: toIso(start), end: toIso(end) };
         };
 
+        const getPeriodOptions = () => {
+            const options = [];
+            const today = new Date();
+            for (let i = -12; i <= 2; i++) {
+                const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+                const year = d.getFullYear();
+                const month = d.getMonth();
+                const start = new Date(year, month, 16);
+                const end = new Date(year, month + 1, 15);
+                const toIso = (dateObj) => {
+                    const offset = dateObj.getTimezoneOffset();
+                    const local = new Date(dateObj.getTime() - (offset*60*1000));
+                    return local.toISOString().split('T')[0];
+                };
+                const label = `${formatDate(start)} bis ${formatDate(end)}`;
+                options.push({ label: label, value: JSON.stringify({ start: toIso(start), end: toIso(end) }), startIso: toIso(start) });
+            }
+            return options;
+        };
+
         const getMonday = (d) => {
             const date = new Date(d);
             const day = date.getDay();
@@ -656,16 +676,13 @@
                                 return `<td style="padding:10px; border:1px solid #ddd; text-align:center; vertical-align:top;">
                                     <div style="font-weight:bold; font-size:14px; color:#111827;">${shift.startTime} - ${shift.endTime}</div>
                                     <div style="font-size:10px; color:#ea580c; text-transform:uppercase; margin-top:4px; font-weight:bold;">${shift.role || 'Service'}</div>
-                                    <div style="font-size:10px; color:#6b7280; margin-top:2px;">${shift.calculatedHours} h</div>
                                 </td>`;
                             }
                             return `<td style="padding:10px; border:1px solid #ddd; text-align:center; color:#ccc;">-</td>`;
                         }).join('');
                         
-                        const weekPlanned = getPlannedHoursForPeriod(emp.id, shiftDatesStr[0], shiftDatesStr[6]);
-                        
                         return `<tr>
-                            <td style="padding:10px; border:1px solid #ddd; font-weight:bold; background:#fff;">${emp.name}<br><small style="color:#666; font-weight:normal;">Soll: ${emp.weeklyHours || 0}h | Ist: ${weekPlanned}h</small></td>
+                            <td style="padding:10px; border:1px solid #ddd; font-weight:bold; background:#fff;">${emp.name}</td>
                             ${cells}
                         </tr>`;
                     }).join('');
