@@ -43,7 +43,7 @@
             UserCog, Power, MessageSquare, StickyNote, Megaphone, Send, User, 
             Cake, CloudSun, ThermometerSun, Eye, AlertTriangle, RotateCw, Settings, 
             KeyRound, PiggyBank, MapPin, Siren, Moon, History, Plus, Minus, ArrowRight, ShieldCheck,
-            CalendarClock, Wand2, ChevronLeft, ChevronRight, Check
+            CalendarClock, Wand2, ChevronLeft, ChevronRight, Check, Layers
         } from 'lucide-react';
 
         // --- FIREBASE KONFIGURATION ---
@@ -212,16 +212,18 @@
             const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
             const [editingLog, setEditingLog] = useState(null);
             const [showShiftModal, setShowShiftModal] = useState(false);
+            const [showShiftTemplateModal, setShowShiftTemplateModal] = useState(false); // NEU
             
             // Data
             const [period, setPeriod] = useState(getDefaultPeriod());
             const [scheduleWeekStart, setScheduleWeekStart] = useState(getMonday(new Date()));
-            const [empScheduleWeekStart, setEmpScheduleWeekStart] = useState(getMonday(new Date())); // Für Mitarbeiter Ansicht
+            const [empScheduleWeekStart, setEmpScheduleWeekStart] = useState(getMonday(new Date()));
             const [selectedEmpForDetails, setSelectedEmpForDetails] = useState(null);
             const [employees, setEmployees] = useState([]);
             const [logs, setLogs] = useState([]);
             const [shifts, setShifts] = useState([]); 
-            const [availabilities, setAvailabilities] = useState([]); // NEU: Verfügbarkeiten
+            const [shiftTemplates, setShiftTemplates] = useState([]); // NEU
+            const [availabilities, setAvailabilities] = useState([]);
             const [settlements, setSettlements] = useState([]);
             const [bossMessages, setBossMessages] = useState([]); 
             const [securityLogs, setSecurityLogs] = useState([]); 
@@ -243,12 +245,11 @@
             const [newEmpPin, setNewEmpPin] = useState('');
             const [newEmpBirthDate, setNewEmpBirthDate] = useState(''); 
             const [newEmpWeeklyHours, setNewEmpWeeklyHours] = useState('40'); 
-            const [newEmpHourlyWage, setNewEmpHourlyWage] = useState(''); // NEU: Lohn
             
             const [clockOutNote, setClockOutNote] = useState('');
             const [newBossMessage, setNewBossMessage] = useState(''); 
             const [msgRecipient, setMsgRecipient] = useState('all'); 
-            const [editEmpData, setEditEmpData] = useState({ id: '', name: '', pin: '', birthDate: '', overtimeBalance: 0, weeklyHours: 40, hourlyWage: 0 }); 
+            const [editEmpData, setEditEmpData] = useState({ id: '', name: '', pin: '', birthDate: '', overtimeBalance: 0, weeklyHours: 40 }); 
             const [manualLogData, setManualLogData] = useState({ employeeId: '', date: new Date().toISOString().split('T')[0], startTime: '08:00', endTime: '16:00' });
             const [settleData, setSettleData] = useState({ billedHours: 0, carryOver: 0 });
             const [manualOvertimeAmount, setManualOvertimeAmount] = useState('');
@@ -256,6 +257,7 @@
             
             // Dienstplan Eingabe
             const [shiftData, setShiftData] = useState({ id: null, employeeId: '', date: '', startTime: '09:00', endTime: '17:00', role: 'Service' });
+            const [newTemplate, setNewTemplate] = useState({ name: '', startTime: '08:00', endTime: '16:00', role: 'Service' }); // NEU
 
             const birthdayAlerts = useMemo(() => checkUpcomingBirthdays(employees), [employees]);
 
@@ -285,7 +287,8 @@
                     const empRef = collection(db, 'artifacts', appId, 'public', 'data', 'employees');
                     const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'timelogs');
                     const shiftsRef = collection(db, 'artifacts', appId, 'public', 'data', 'shifts'); 
-                    const availRef = collection(db, 'artifacts', appId, 'public', 'data', 'availabilities'); // NEU
+                    const templatesRef = collection(db, 'artifacts', appId, 'public', 'data', 'shift_templates'); // NEU
+                    const availRef = collection(db, 'artifacts', appId, 'public', 'data', 'availabilities'); 
                     const settRef = collection(db, 'artifacts', appId, 'public', 'data', 'settlements');
                     const msgRef = collection(db, 'artifacts', appId, 'public', 'data', 'messages');
                     const secRef = collection(db, 'artifacts', appId, 'public', 'data', 'security_logs');
@@ -294,7 +297,8 @@
                     const unsubEmp = onSnapshot(empRef, (snap) => { setEmployees(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setLoading(false); setDbStatus('active'); });
                     const unsubLogs = onSnapshot(logsRef, (snap) => setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                     const unsubShifts = onSnapshot(shiftsRef, (snap) => setShifts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
-                    const unsubAvail = onSnapshot(availRef, (snap) => setAvailabilities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })))); // NEU
+                    const unsubTemplates = onSnapshot(templatesRef, (snap) => setShiftTemplates(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })))); // NEU
+                    const unsubAvail = onSnapshot(availRef, (snap) => setAvailabilities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })))); 
                     const unsubSett = onSnapshot(settRef, (snap) => setSettlements(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
                     const unsubMsg = onSnapshot(msgRef, (snap) => {
                         const msgs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -310,7 +314,7 @@
                         if (snap.exists()) { const data = snap.data(); if (data.adminPin) setAdminPin(data.adminPin); } 
                         else { setDoc(settingsDoc, { adminPin: ADMIN_PIN_DEFAULT }, { merge: true }); }
                     });
-                    return () => { unsubEmp(); unsubLogs(); unsubShifts(); unsubAvail(); unsubSett(); unsubMsg(); unsubSec(); unsubSettings(); };
+                    return () => { unsubEmp(); unsubLogs(); unsubShifts(); unsubTemplates(); unsubAvail(); unsubSett(); unsubMsg(); unsubSec(); unsubSettings(); };
                 } catch(e) { setDbStatus('error'); }
             }, [user]);
 
@@ -404,10 +408,8 @@
             const handleDeleteLog = async (logId) => { if(!confirm("Eintrag wirklich löschen?")) return; try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', logId)); showStatus("Eintrag gelöscht", "success"); } catch(err) { showStatus("Fehler", "error"); } };
             const handleDeleteSecurityLog = async (logId) => { if(!confirm("Eintrag löschen?")) return; try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'security_logs', logId)); } catch(err) { console.error(err); } };
             
-            // NEU: Verfügbarkeit eintragen
             const toggleAvailability = async (empId, dateStr) => {
-                if (shifts.some(s => s.employeeId === empId && s.date === dateStr)) return; // Wenn schon geplant, kein Klick möglich
-                
+                if (shifts.some(s => s.employeeId === empId && s.date === dateStr)) return; 
                 const existing = availabilities.find(a => a.employeeId === empId && a.date === dateStr);
                 try {
                     if (existing) {
@@ -442,21 +444,20 @@
             const executeSystemReset = async (e) => {
                 e.preventDefault();
                 if (confirmPinInput !== adminPin) { showStatus("Falsche PIN! Abbruch.", "error"); return; }
-                const allDocs = [...employees.map(e => ({col:'employees',id:e.id})), ...logs.map(l => ({col:'timelogs',id:l.id})), ...settlements.map(s => ({col:'settlements',id:s.id})), ...bossMessages.map(m => ({col:'messages',id:m.id})), ...securityLogs.map(s => ({col:'security_logs', id: s.id})), ...shifts.map(s => ({col:'shifts', id:s.id})), ...availabilities.map(a => ({col:'availabilities', id:a.id}))]; 
+                const allDocs = [...employees.map(e => ({col:'employees',id:e.id})), ...logs.map(l => ({col:'timelogs',id:l.id})), ...settlements.map(s => ({col:'settlements',id:s.id})), ...bossMessages.map(m => ({col:'messages',id:m.id})), ...securityLogs.map(s => ({col:'security_logs', id: s.id})), ...shifts.map(s => ({col:'shifts', id:s.id})), ...availabilities.map(a => ({col:'availabilities', id:a.id})), ...shiftTemplates.map(t => ({col:'shift_templates', id:t.id}))]; 
                 for(const i of allDocs) try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', i.col, i.id)); } catch(e){} 
                 showStatus("System zurückgesetzt", "success"); setShowDeleteConfirm(null); setView('terminal'); 
             };
 
-            // Employee Handling (WITH HOURLY WAGE)
             const handleAddEmployee = async (e) => { 
                 e.preventDefault(); 
                 if (!newEmpName || !newEmpPin) { showStatus("Daten fehlen!", "error"); return; } 
                 if (employees.some(emp => emp.pin === newEmpPin)) { showStatus("PIN vergeben", "error"); return; } 
                 try { 
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'employees'), { 
-                        name: newEmpName, pin: newEmpPin, birthDate: newEmpBirthDate, overtimeBalance: 0, weeklyHours: parseFloat(newEmpWeeklyHours) || 0, hourlyWage: parseFloat(newEmpHourlyWage) || 0
+                        name: newEmpName, pin: newEmpPin, birthDate: newEmpBirthDate, overtimeBalance: 0, weeklyHours: parseFloat(newEmpWeeklyHours) || 0
                     }); 
-                    setNewEmpName(''); setNewEmpPin(''); setNewEmpBirthDate(''); setNewEmpWeeklyHours('40'); setNewEmpHourlyWage(''); setShowAddEmployee(false); 
+                    setNewEmpName(''); setNewEmpPin(''); setNewEmpBirthDate(''); setNewEmpWeeklyHours('40'); setShowAddEmployee(false); 
                     showStatus("Mitarbeiter angelegt", "success"); 
                 } catch (err) { showStatus("Fehler beim Speichern", "error"); } 
             };
@@ -464,13 +465,12 @@
                 e.preventDefault(); 
                 if (employees.some(emp => emp.pin === editEmpData.pin && emp.id !== editEmpData.id)) { showStatus("PIN vergeben", "error"); return; } 
                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'employees', editEmpData.id), { 
-                    name: editEmpData.name, pin: editEmpData.pin, birthDate: editEmpData.birthDate, overtimeBalance: parseFloat(editEmpData.overtimeBalance), weeklyHours: parseFloat(editEmpData.weeklyHours) || 0, hourlyWage: parseFloat(editEmpData.hourlyWage) || 0
+                    name: editEmpData.name, pin: editEmpData.pin, birthDate: editEmpData.birthDate, overtimeBalance: parseFloat(editEmpData.overtimeBalance), weeklyHours: parseFloat(editEmpData.weeklyHours) || 0
                 }); 
-                setSelectedEmpForDetails(prev => ({...prev, name: editEmpData.name, pin: editEmpData.pin, birthDate: editEmpData.birthDate, overtimeBalance: editEmpData.overtimeBalance, weeklyHours: editEmpData.weeklyHours, hourlyWage: editEmpData.hourlyWage})); 
+                setSelectedEmpForDetails(prev => ({...prev, name: editEmpData.name, pin: editEmpData.pin, birthDate: editEmpData.birthDate, overtimeBalance: editEmpData.overtimeBalance, weeklyHours: editEmpData.weeklyHours})); 
                 setShowEditEmpModal(false); showStatus("Profil aktualisiert", "success"); 
             };
 
-            // Modals Logic
             const handleSaveEdit = async (e) => { e.preventDefault(); if (!editingLog) return; try { const start = new Date(`${editingLog.date}T${editingLog.startTimeStr}`); let end = new Date(`${editingLog.date}T${editingLog.endTimeStr}`); if (end < start) end.setDate(end.getDate() + 1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', editingLog.id), { startTime: Timestamp.fromDate(start), endTime: Timestamp.fromDate(end), date: editingLog.date, calculatedHours: calculateHours(start, end), note: editingLog.note || '' }); setEditingLog(null); showStatus("Gespeichert", "success"); } catch (err) { showStatus("Fehler", "error"); } };
             const handleSaveSettlement = async (e) => { e.preventDefault(); if (!selectedEmpForDetails) return; const billed = parseFloat(settleData.billedHours); const carryOver = parseFloat(settleData.carryOver); try { const batch = writeBatch(db); const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'employees', selectedEmpForDetails.id); batch.update(empRef, { overtimeBalance: carryOver }); const startLimit = new Date(period.start).getTime(); const endLimit = new Date(period.end).setHours(23, 59, 59, 999); const logsToSettle = logs.filter(l => { if (l.employeeId !== selectedEmpForDetails.id || l.isSettled || !l.endTime) return false; const d = safeDate(l.startTime).getTime(); return d >= startLimit && d <= endLimit; }); logsToSettle.forEach(log => { const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', log.id); batch.update(logRef, { isSettled: true }); }); const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements')); batch.set(settRef, { employeeId: selectedEmpForDetails.id, date: new Date().toISOString().split('T')[0], periodStart: period.start, periodEnd: period.end, paidHours: billed, newBalance: carryOver, type: 'settlement' }); await batch.commit(); setShowSettleModal(false); showStatus("Abrechnung erfolgreich!", "success"); } catch(err) { showStatus("Fehler", "error"); } };
             const handleManualLogSubmit = async (e) => { e.preventDefault(); const emp = employees.find(e => e.id === manualLogData.employeeId); const s = new Date(`${manualLogData.date}T${manualLogData.startTime}`); let end = new Date(`${manualLogData.date}T${manualLogData.endTime}`); if (end < s) end.setDate(end.getDate() + 1); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'timelogs'), { employeeId: emp.id, employeeName: emp.name, startTime: Timestamp.fromDate(s), endTime: Timestamp.fromDate(end), date: manualLogData.date, calculatedHours: calculateHours(s, end), note: 'Manuell', isSettled: false }); setShowManualLog(false); showStatus("Gebucht", "success"); };
@@ -511,19 +511,6 @@
             const shiftDatesStr = useMemo(() => daysOfWeek.map(d => d.toISOString().split('T')[0]), [daysOfWeek]);
             const scheduleWeekEndStr = shiftDatesStr[6];
 
-            // NEU: Lohnkosten der Woche
-            const weeklyCost = useMemo(() => {
-                return shiftDatesStr.reduce((sum, dateStr) => {
-                    const dayShifts = shifts.filter(s => s.date === dateStr);
-                    return sum + dayShifts.reduce((daySum, s) => {
-                        const emp = employees.find(e => e.id === s.employeeId);
-                        const wage = emp ? (parseFloat(emp.hourlyWage) || 0) : 0;
-                        return daySum + (parseFloat(s.calculatedHours || 0) * wage);
-                    }, 0);
-                }, 0);
-            }, [shifts, shiftDatesStr, employees]);
-
-            // Mitarbeiter Verfügbarkeits-Tage
             const empDaysOfWeek = useMemo(() => {
                 const days = [];
                 for(let i=0; i<7; i++) {
@@ -563,7 +550,6 @@
                 } catch(err) { showStatus("Fehler", "error"); }
             };
 
-            // KI AUTO-PLANUNG
             const handleAutoSchedule = async () => {
                 if (!confirm("Intelligente Planung für diese Woche starten? (Plant bevorzugt an 'Verfügbar'-Tagen)")) return;
                 setIsProcessing(true);
@@ -579,25 +565,20 @@
                         let shiftLength = targetWeekly >= 30 ? 8 : (targetWeekly / 3); 
                         if (shiftLength > 8) shiftLength = 8;
                         
-                        // Finde alle möglichen Tage für diesen Mitarbeiter in dieser Woche
                         let possibleDates = [];
                         for (let i = 0; i < 7; i++) {
                             const dateStr = shiftDatesStr[i];
-                            // Wenn er noch keine Schicht hat...
                             if (!shifts.some(s => s.employeeId === emp.id && s.date === dateStr)) {
                                 const isAvail = availabilities.some(a => a.employeeId === emp.id && a.date === dateStr);
                                 possibleDates.push({ dateStr, isAvail, dayIdx: i });
                             }
                         }
                         
-                        // Mische sie leicht, sortiere sie dann aber streng nach Verfügbarkeit
                         possibleDates.sort(() => Math.random() - 0.5);
                         possibleDates.sort((a, b) => (a.isAvail === b.isAvail ? 0 : a.isAvail ? -1 : 1));
                         
                         for (const {dateStr, dayIdx, isAvail} of possibleDates) {
                             if (currentPlanned >= targetWeekly - 0.5) break; 
-                            
-                            // Sonntags nur planen, wenn explizit verfügbar
                             if (dayIdx === 6 && !isAvail) continue;
                             
                             const startH = 9; 
@@ -634,6 +615,84 @@
                 setIsProcessing(false);
             };
 
+            // NEU: SCHICHT VORLAGEN FUNKTIONEN
+            const handleAddTemplate = async (e) => {
+                e.preventDefault();
+                try {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shift_templates'), newTemplate);
+                    setNewTemplate({ name: '', startTime: '08:00', endTime: '16:00', role: 'Service' });
+                    showStatus("Vorlage gespeichert", "success");
+                } catch(err) { showStatus("Fehler", "error"); }
+            };
+
+            const handleDeleteTemplate = async (id) => {
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shift_templates', id));
+                    showStatus("Vorlage gelöscht", "success");
+                } catch(err) { showStatus("Fehler", "error"); }
+            };
+
+            // NEU: DIENSTPLAN PDF EXPORT
+            const handlePrintSchedule = () => {
+                const wochentageNamen = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+                const daysHtml = daysOfWeek.map(d => `<th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:center;">${wochentageNamen[d.getDay()]}<br><small style="color:#666;">${d.getDate()}.${d.getMonth()+1}.</small></th>`).join('');
+
+                const rowsHtml = employees.map(emp => {
+                    const cells = shiftDatesStr.map(dateStr => {
+                        const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr);
+                        if (shift) {
+                            return `<td style="padding:10px; border:1px solid #ddd; text-align:center; vertical-align:top;">
+                                <div style="font-weight:bold; font-size:14px; color:#111827;">${shift.startTime} - ${shift.endTime}</div>
+                                <div style="font-size:10px; color:#ea580c; text-transform:uppercase; margin-top:4px; font-weight:bold;">${shift.role || 'Service'}</div>
+                                <div style="font-size:10px; color:#6b7280; margin-top:2px;">${shift.calculatedHours} h</div>
+                            </td>`;
+                        }
+                        return `<td style="padding:10px; border:1px solid #ddd; text-align:center; color:#ccc;">-</td>`;
+                    }).join('');
+                    
+                    const weekPlanned = getPlannedHoursForPeriod(emp.id, shiftDatesStr[0], shiftDatesStr[6]);
+                    
+                    return `<tr>
+                        <td style="padding:10px; border:1px solid #ddd; font-weight:bold; background:#fff;">${emp.name}<br><small style="color:#666; font-weight:normal;">Soll: ${emp.weeklyHours || 0}h | Ist: ${weekPlanned}h</small></td>
+                        ${cells}
+                    </tr>`;
+                }).join('');
+
+                const htmlContent = `
+                    <html>
+                    <head>
+                        <title>Dienstplan KW</title>
+                        <style>
+                            body { font-family: sans-serif; padding: 20px; color: #111827; }
+                            h1 { border-bottom: 2px solid #ea580c; padding-bottom: 10px; margin-bottom: 20px; font-size: 24px; color: #111827; }
+                            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                            .footer { margin-top: 30px; font-size: 10px; text-align: center; color: #9ca3af; }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>Dienstplan: ${formatDate(daysOfWeek[0])} - ${formatDate(daysOfWeek[6])}</h1>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:left; width: 150px;">Mitarbeiter</th>
+                                    ${daysHtml}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rowsHtml}
+                            </tbody>
+                        </table>
+                        <div class="footer">Generiert von MABELLE TIMER am ${new Date().toLocaleString('de-DE')}</div>
+                        <script>window.onload = function() { window.print(); }<\/script>
+                    </body>
+                    </html>
+                `;
+                
+                const printWindow = window.open('', '_blank');
+                printWindow.document.write(htmlContent);
+                printWindow.document.close();
+            };
+
             const handlePrintTaxReport = () => {
                 const startLimit = new Date(period.start).getTime();
                 const endLimit = new Date(period.end).setHours(23, 59, 59, 999);
@@ -650,8 +709,6 @@
                 const rowsHtml = reportRows.map(r => `<tr><td>${r.name}</td><td style="text-align: right;">${r.hours} h</td></tr>`).join('');
                 
                 const printWindow = window.open('', '_blank');
-                const scriptEnd = "</" + "script>";
-                
                 const htmlContent = `
                     <html>
                     <head>
@@ -691,23 +748,13 @@
                             </tfoot>
                         </table>
                         <div class="footer">MABELLE TIMER &bull; Steuer-Export</div>
-                        <script>window.onload = function() { window.print(); }${scriptEnd}
+                        <script>window.onload = function() { window.print(); }<\/script>
                     </body>
                     </html>
                 `;
                 
                 printWindow.document.write(htmlContent);
                 printWindow.document.close();
-            };
-
-            const handlePrintSingle = (emp) => {
-                 const stats = getEmployeeStats(emp.id, period);
-                 const rows = stats.logs.map(l => `<tr><td>${formatDate(l.date)}</td><td>${safeDate(l.startTime).toLocaleTimeString()} - ${l.endTime ? safeDate(l.endTime).toLocaleTimeString() : '...'}</td><td>${l.calculatedHours} h</td></tr>`).join('');
-                 const printWindow = window.open('', '_blank');
-                 const scriptEnd = "</" + "script>";
-                 const html = `<html><head><title>Protokoll</title><style>body{font-family:sans-serif;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background:#f0f0f0;}</style></head><body><h1>Protokoll: ${emp.name}</h1><p>Zeitraum: ${formatDate(period.start)} bis ${formatDate(period.end)}</p><p>Gesamt Verfügbar: <b>${stats.totalAvailable} h</b></p><table><thead><tr><th>Datum</th><th>Zeit</th><th>Std</th></tr></thead><tbody>${rows}</tbody></table><script>window.onload = function() { window.print(); }${scriptEnd}</body></html>`;
-                 printWindow.document.write(html);
-                 printWindow.document.close();
             };
 
             if (loading && dbStatus === 'connecting') return <div className="h-screen flex items-center justify-center text-orange-600 font-bold bg-white"><RotateCw className="animate-spin mb-4" size={32} /> LOADING...</div>;
@@ -731,7 +778,7 @@
                         </div>
                     </nav>
 
-                    <main className={`mx-auto w-full max-w-6xl ${(!activeEmployee && view === 'terminal') ? 'flex-1 flex flex-col p-4' : 'p-4 md:p-8'}`}>
+                    <main className={`mx-auto w-full max-w-6xl ${(!activeEmployee && view === 'terminal') ? 'flex-1 flex flex-col p-4 overflow-hidden' : 'p-4 md:p-8'}`}>
                         {statusMsg && <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 ${statusMsg.type === 'success' ? 'bg-gray-900 text-white' : 'bg-red-600 text-white'}`}><p className="font-bold text-sm">{statusMsg.msg}</p></div>}
 
                         {!activeEmployee && view === 'terminal' && (
@@ -776,6 +823,13 @@
                                     </div>
                                 )}
 
+                                <div className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+                                    <div className="flex items-center gap-3"><Calendar size={18} className="text-orange-600" /><span className="font-black text-[10px] uppercase tracking-widest text-gray-500">Zeitraum wählen</span></div>
+                                    <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-100">
+                                        <input type="date" value={period.start} onChange={(e) => setPeriod({...period, start: e.target.value})} className="bg-transparent font-bold text-xs p-1 outline-none" /><span className="text-gray-300">-</span><input type="date" value={period.end} onChange={(e) => setPeriod({...period, end: e.target.value})} className="bg-transparent font-bold text-xs p-1 outline-none" />
+                                    </div>
+                                </div>
+
                                 <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
                                     <div className="flex justify-between items-center mb-8 gap-4">
                                         <div className="bg-orange-50 px-6 py-4 rounded-2xl border border-orange-100 text-left w-full"><p className="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1">Überstunden-Konto</p><p className="text-3xl font-black text-orange-600">{getEmployeeStats(activeEmployee.id, period).overtimeAccount} h</p></div>
@@ -797,7 +851,6 @@
                                     </div>
                                 </div>
                                 
-                                {/* NEU: VERFÜGBARKEIT EINTRAGEN FÜR MITARBEITER */}
                                 <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] shadow-sm border border-gray-100 mt-6">
                                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                                         <div>
@@ -817,7 +870,6 @@
                                             const dateStr = d.toISOString().split('T')[0];
                                             const isAvail = availabilities.some(a => a.employeeId === activeEmployee.id && a.date === dateStr);
                                             const isPlanned = shifts.some(s => s.employeeId === activeEmployee.id && s.date === dateStr);
-                                            // 0 = Sonntag, 1 = Montag ...
                                             const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
                                             
                                             return (
@@ -887,7 +939,7 @@
                                                 return (
                                                     <div key={emp.id} onClick={() => setSelectedEmpForDetails(emp)} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-200 hover:border-orange-500 transition-all cursor-pointer group relative overflow-hidden">
                                                         <div className="absolute top-8 right-8 flex items-center gap-2">{activeLog ? <><span className="text-[8px] font-bold uppercase tracking-widest text-green-600">Aktiv</span><div className="w-3 h-3 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div></> : <div className="w-3 h-3 rounded-full bg-red-400"></div>}</div>
-                                                        <div className="flex items-center gap-4 mb-6"><div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400 group-hover:bg-orange-50 group-hover:text-orange-600 transition-colors"><Users size={24} /></div><div><h3 className="text-xl font-black tracking-tight pr-10">{emp.name}</h3><p className="text-xs text-gray-400 font-bold mt-1">Soll: {emp.weeklyHours||0}h | Lohn: {emp.hourlyWage||0}€</p></div></div>
+                                                        <div className="flex items-center gap-4 mb-6"><div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400 group-hover:bg-orange-50 group-hover:text-orange-600 transition-colors"><Users size={24} /></div><div><h3 className="text-xl font-black tracking-tight pr-10">{emp.name}</h3><p className="text-xs text-gray-400 font-bold mt-1">Soll: {emp.weeklyHours||0}h</p></div></div>
                                                         <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Konto + Aktuell</p><p className="text-4xl font-black text-orange-600">{stats.totalAvailable}h</p></div>
                                                         {activeLog && <div className="mt-4 inline-flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter"><Clock size={10} /> Seit {safeDate(activeLog.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>}
                                                     </div>
@@ -899,7 +951,7 @@
                                             <div className="flex justify-between items-center">
                                                 <button onClick={() => setSelectedEmpForDetails(null)} className="flex items-center gap-2 text-gray-400 font-bold text-sm uppercase"><ArrowLeft size={16} /> Übersicht</button>
                                                 <div className="flex gap-2">
-                                                    <button onClick={() => { setEditEmpData({ id: selectedEmpForDetails.id, name: selectedEmpForDetails.name, pin: selectedEmpForDetails.pin, birthDate: selectedEmpForDetails.birthDate || '', overtimeBalance: getEmployeeStats(selectedEmpForDetails.id).overtimeAccount, weeklyHours: selectedEmpForDetails.weeklyHours || 40, hourlyWage: selectedEmpForDetails.hourlyWage || 0 }); setShowEditEmpModal(true); }} className="bg-gray-100 text-gray-700 px-5 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2"><UserCog size={14} /> Profil</button>
+                                                    <button onClick={() => { setEditEmpData({ id: selectedEmpForDetails.id, name: selectedEmpForDetails.name, pin: selectedEmpForDetails.pin, birthDate: selectedEmpForDetails.birthDate || '', overtimeBalance: getEmployeeStats(selectedEmpForDetails.id).overtimeAccount, weeklyHours: selectedEmpForDetails.weeklyHours || 40 }); setShowEditEmpModal(true); }} className="bg-gray-100 text-gray-700 px-5 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2"><UserCog size={14} /> Profil</button>
                                                     <button onClick={() => initiateDeleteEmployee(selectedEmpForDetails.id)} className="bg-red-50 text-red-600 px-3 py-2 rounded-xl hover:bg-red-100 transition"><Trash2 size={20} /></button>
                                                 </div>
                                             </div>
@@ -968,10 +1020,20 @@
                                             </div>
                                             <button onClick={() => { const d = new Date(scheduleWeekStart); d.setDate(d.getDate() + 7); setScheduleWeekStart(d); }} className="p-3 text-gray-500 hover:bg-white rounded-xl"><ChevronRight size={20}/></button>
                                          </div>
-                                         <div className="flex items-center gap-4">
-                                            {/* NEU: LOHNKOSTEN VORSCHAU */}
-                                            <div className="bg-green-50 px-4 py-2 rounded-xl text-xs font-bold text-green-700">Lohnkosten: {weeklyCost.toFixed(2)} €</div>
-                                            <div className="bg-gray-100 px-4 py-2 rounded-xl text-xs font-bold text-gray-500 hidden md:block">Abrechnungsmonat: {formatDate(period.start)} - {formatDate(period.end)}</div>
+                                         <div className="flex items-center gap-2 flex-wrap">
+                                            <div className="bg-gray-100 px-4 py-3 rounded-2xl text-xs font-bold text-gray-500 hidden lg:block">Abrechnungsmonat: {formatDate(period.start)} - {formatDate(period.end)}</div>
+                                            <button 
+                                              onClick={() => setShowShiftTemplateModal(true)} 
+                                              className="bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 px-4 py-3 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 transition"
+                                            >
+                                              <Layers size={16} /> Vorlagen
+                                            </button>
+                                            <button 
+                                              onClick={handlePrintSchedule} 
+                                              className="bg-gray-800 text-white border border-gray-900 hover:bg-black px-4 py-3 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 transition"
+                                            >
+                                              <Printer size={16} /> PDF
+                                            </button>
                                             <button 
                                               onClick={handleAutoSchedule} 
                                               disabled={isProcessing}
@@ -985,26 +1047,24 @@
                                       {/* Grid */}
                                       <div className="bg-white shadow-sm border border-gray-200 rounded-[2.5rem] overflow-hidden">
                                          <div className="overflow-x-auto">
-                                            <table className="w-full text-left border-collapse">
+                                            <table className="w-full text-left border-collapse min-w-[800px]">
                                                <thead className="bg-gray-50">
                                                   <tr>
-                                                     <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase border-b border-r border-gray-200 w-48">Mitarbeiter</th>
+                                                     <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase border-b border-r border-gray-200 w-40">Mitarbeiter</th>
                                                      {daysOfWeek.map((d, i) => (
                                                         <th key={i} className={`px-2 py-4 text-center border-b border-r border-gray-200 ${i===6 ? 'bg-orange-50/30' : ''}`}>
                                                            <div className="text-[10px] font-black text-gray-400 uppercase">{['Mo','Di','Mi','Do','Fr','Sa','So'][i]}</div>
                                                            <div className="text-sm font-bold text-gray-800">{d.getDate()}.</div>
                                                         </th>
                                                      ))}
-                                                     <th className="px-4 py-4 text-center text-[10px] font-black text-gray-400 uppercase border-b border-gray-200 bg-gray-50 w-24">Std. Woche</th>
-                                                     <th className="px-4 py-4 text-center text-[10px] font-black text-gray-400 uppercase border-b border-gray-200 bg-orange-50 w-24">Std. Monat</th>
+                                                     <th className="px-4 py-4 text-center text-[10px] font-black text-gray-400 uppercase border-b border-gray-200 bg-gray-50 w-20">Std. Woche</th>
+                                                     <th className="px-4 py-4 text-center text-[10px] font-black text-gray-400 uppercase border-b border-gray-200 bg-orange-50 w-20">Std. Monat</th>
                                                   </tr>
                                                </thead>
                                                <tbody className="divide-y divide-gray-100">
                                                   {employees.map(emp => {
                                                      const targetW = parseFloat(emp.weeklyHours || 0);
-                                                     // Geplante Stunden in der gewählten Woche
                                                      const weekPlanned = parseFloat(getPlannedHoursForPeriod(emp.id, shiftDatesStr[0], shiftDatesStr[6]));
-                                                     // Geplante Stunden im aktuellen Abrechnungszeitraum (Period)
                                                      const monthPlanned = parseFloat(getPlannedHoursForPeriod(emp.id, period.start, period.end));
                                                      
                                                      return (
@@ -1015,7 +1075,7 @@
                                                            </td>
                                                            {shiftDatesStr.map((dateStr, idx) => {
                                                               const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr);
-                                                              const isAvail = availabilities.some(a => a.employeeId === emp.id && a.date === dateStr); // NEU: Verfügbarkeits-Prüfung
+                                                              const isAvail = availabilities.some(a => a.employeeId === emp.id && a.date === dateStr);
                                                               
                                                               return (
                                                                  <td key={dateStr} className={`border-r border-gray-100 p-2 align-top ${idx===6 ? 'bg-orange-50/10' : ''}`}>
@@ -1029,10 +1089,9 @@
                                                                           <div className="text-[9px] text-green-600 text-center font-black mt-1">{shift.calculatedHours} h</div>
                                                                        </div>
                                                                     ) : (
-                                                                       // NEU: Anzeige der Verfügbarkeit
                                                                        isAvail ? (
                                                                            <div 
-                                                                              onClick={() => setShiftData({ id: null, employeeId: emp.id, date: dateStr, startTime: '09:00', endTime: '17:00', role: 'Service' })}
+                                                                              onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, startTime: '09:00', endTime: '17:00', role: 'Service' }); setShowShiftModal(true); }}
                                                                               className="h-full min-h-[50px] rounded-xl border-2 border-green-300 bg-green-50 flex flex-col items-center justify-center cursor-pointer hover:bg-green-100 transition relative group/empty"
                                                                            >
                                                                               <span className="text-[8px] font-black uppercase text-green-600 mb-1">Verfügbar</span>
@@ -1040,7 +1099,7 @@
                                                                            </div>
                                                                        ) : (
                                                                            <div 
-                                                                              onClick={() => setShiftData({ id: null, employeeId: emp.id, date: dateStr, startTime: '09:00', endTime: '17:00', role: 'Service' })}
+                                                                              onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, startTime: '09:00', endTime: '17:00', role: 'Service' }); setShowShiftModal(true); }}
                                                                               className="h-full min-h-[50px] rounded-xl border border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition opacity-0 group-hover:opacity-100"
                                                                            >
                                                                               <Plus size={16} className="text-gray-400" />
@@ -1072,15 +1131,77 @@
 
                         {/* --- MODALS --- */}
                         
-                        {/* SCHICHT PLANEN MODAL (MIT ROLLE) */}
-                        {shiftData && shiftData.employeeId && (
+                        {/* SCHICHT VORLAGEN VERWALTEN MODAL */}
+                        {showShiftTemplateModal && (
+                            <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
+                                <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h2 className="text-xl font-black">Schicht-Vorlagen</h2>
+                                        <button onClick={() => setShowShiftTemplateModal(false)} className="text-gray-400"><X size={24}/></button>
+                                    </div>
+                                    
+                                    <form onSubmit={handleAddTemplate} className="space-y-3 mb-8 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                                        <input type="text" placeholder="Name (z.B. Frühschicht)" required value={newTemplate.name} onChange={e=>setNewTemplate({...newTemplate, name:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input type="time" required value={newTemplate.startTime} onChange={e=>setNewTemplate({...newTemplate, startTime:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
+                                            <input type="time" required value={newTemplate.endTime} onChange={e=>setNewTemplate({...newTemplate, endTime:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
+                                        </div>
+                                        <select required value={newTemplate.role} onChange={e=>setNewTemplate({...newTemplate, role:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500">
+                                            <option value="Service">Service</option>
+                                            <option value="Bar">Bar</option>
+                                            <option value="Küche">Küche</option>
+                                            <option value="Runner">Runner</option>
+                                            <option value="Garderobe">Garderobe</option>
+                                            <option value="Event">Event</option>
+                                        </select>
+                                        <button type="submit" className="w-full bg-orange-600 text-white py-3 rounded-xl font-bold text-sm shadow-md hover:bg-orange-700">Vorlage hinzufügen</button>
+                                    </form>
+
+                                    <div className="space-y-2">
+                                        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Gespeicherte Vorlagen</h3>
+                                        {shiftTemplates.length === 0 && <p className="text-sm text-gray-400 italic">Noch keine Vorlagen erstellt.</p>}
+                                        {shiftTemplates.map(t => (
+                                            <div key={t.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+                                                <div>
+                                                    <p className="font-bold text-sm text-gray-900">{t.name}</p>
+                                                    <p className="text-[10px] font-bold text-gray-500 uppercase">{t.startTime} - {t.endTime} &bull; {t.role}</p>
+                                                </div>
+                                                <button onClick={() => handleDeleteTemplate(t.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 size={16}/></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* SCHICHT PLANEN MODAL (MIT ROLLE UND VORLAGEN) */}
+                        {showShiftModal && shiftData && shiftData.employeeId && (
                            <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
                               <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm">
                                  <div className="flex justify-between items-center mb-6">
                                     <h2 className="text-xl font-black">{shiftData.id ? 'Schicht bearbeiten' : 'Schicht eintragen'}</h2>
-                                    <button onClick={() => setShiftData({ id: null, employeeId: '', date: '', startTime: '09:00', endTime: '17:00', role: 'Service' })} className="text-gray-400"><X size={24}/></button>
+                                    <button onClick={() => { setShiftData({ id: null, employeeId: '', date: '', startTime: '09:00', endTime: '17:00', role: 'Service' }); setShowShiftModal(false); }} className="text-gray-400"><X size={24}/></button>
                                  </div>
-                                 <p className="text-sm font-bold text-gray-500 mb-6">{employees.find(e=>e.id===shiftData.employeeId)?.name} &bull; {formatDate(shiftData.date)}</p>
+                                 
+                                 {shiftTemplates.length > 0 && !shiftData.id && (
+                                     <div className="mb-6 bg-orange-50/50 p-4 rounded-2xl border border-orange-100">
+                                         <label className="text-[10px] font-black text-orange-600/70 uppercase tracking-widest block mb-2">Aus Vorlage wählen</label>
+                                         <div className="flex flex-wrap gap-2">
+                                             {shiftTemplates.map(t => (
+                                                 <button 
+                                                    type="button" 
+                                                    key={t.id} 
+                                                    onClick={() => setShiftData({...shiftData, startTime: t.startTime, endTime: t.endTime, role: t.role})} 
+                                                    className="bg-white text-orange-600 border border-orange-200 px-3 py-2 rounded-xl text-xs font-bold hover:bg-orange-50 transition shadow-sm"
+                                                 >
+                                                     {t.name}
+                                                 </button>
+                                             ))}
+                                         </div>
+                                     </div>
+                                 )}
+
+                                 <p className="text-sm font-bold text-gray-500 mb-4">{employees.find(e=>e.id===shiftData.employeeId)?.name} &bull; {formatDate(shiftData.date)}</p>
                                  <form onSubmit={saveShift} className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4">
                                        <div><label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Von</label><input type="time" required value={shiftData.startTime} onChange={e=>setShiftData({...shiftData, startTime:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold bg-gray-50"/></div>
@@ -1163,9 +1284,8 @@
                                         <input value={editEmpData.pin} onChange={e=>setEditEmpData({...editEmpData, pin:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="PIN" />
                                         <div className="grid grid-cols-2 gap-4">
                                            <div><label className="text-xs font-bold text-gray-400 ml-1">Wochenstunden (Soll)</label><input type="number" step="0.5" required value={editEmpData.weeklyHours} onChange={e=>setEditEmpData({...editEmpData, weeklyHours:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="z.B. 40" /></div>
-                                           <div><label className="text-xs font-bold text-gray-400 ml-1">Stundenlohn (€)</label><input type="number" step="0.01" value={editEmpData.hourlyWage} onChange={e=>setEditEmpData({...editEmpData, hourlyWage:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="z.B. 15.00" /></div>
+                                           <div><label className="text-xs font-bold text-gray-400 ml-1">Konto-Korrektur</label><input type="number" step="0.01" value={editEmpData.overtimeBalance} onChange={e=>setEditEmpData({...editEmpData, overtimeBalance:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="z.B. 2.5" /></div>
                                         </div>
-                                        <div><label className="text-xs font-bold text-gray-400 ml-1">Konto-Korrektur</label><input type="number" step="0.01" value={editEmpData.overtimeBalance} onChange={e=>setEditEmpData({...editEmpData, overtimeBalance:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="z.B. 2.5" /></div>
                                         <button className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold">SPEICHERN</button>
                                     </form>
                                 </div>
@@ -1242,7 +1362,6 @@
                                         <div className="relative"><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Geburtsdatum (Optional)</label><input type="date" value={newEmpBirthDate} onChange={(e) => setNewEmpBirthDate(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" /></div>
                                         <div className="grid grid-cols-2 gap-4">
                                            <div className="relative"><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Soll-Stunden (Woche)</label><input type="number" step="0.5" required value={newEmpWeeklyHours} onChange={(e) => setNewEmpWeeklyHours(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" placeholder="z.B. 40" /></div>
-                                           <div className="relative"><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Stundenlohn (€)</label><input type="number" step="0.01" value={newEmpHourlyWage} onChange={(e) => setNewEmpHourlyWage(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" placeholder="z.B. 15.00" /></div>
                                         </div>
                                         <button type="submit" className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-lg">ANLEGEN</button>
                                     </form>
