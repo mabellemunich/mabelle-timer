@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>MABELLE TIMER</title>
+    <link rel="icon" href="data:,">
     <script src="https://cdn.tailwindcss.com"></script>
     
     <script src="https://unpkg.com/@babel/standalone@7.22.20/babel.min.js"></script>
@@ -72,13 +73,29 @@
             return isNaN(d.getTime()) ? new Date() : d;
         };
 
+        const toLocalIsoDate = (d) => {
+            try {
+                if (!d || isNaN(d.getTime())) return '';
+                const offset = d.getTimezoneOffset();
+                const local = new Date(d.getTime() - (offset*60*1000));
+                return local.toISOString().split('T')[0];
+            } catch(e) {
+                return '';
+            }
+        };
+
         const formatDate = (dateVal) => {
-            if (!dateVal) return '';
-            const d = safeDate(dateVal);
-            const day = String(d.getDate()).padStart(2, '0');
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const year = d.getFullYear();
-            return `${day}.${month}.${year}`;
+            try {
+                if (!dateVal) return '';
+                const d = safeDate(dateVal);
+                if (isNaN(d.getTime())) return '';
+                const day = String(d.getDate()).padStart(2, '0');
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const year = d.getFullYear();
+                return `${day}.${month}.${year}`;
+            } catch(e) {
+                return '';
+            }
         };
 
         const calculateHours = (start, end) => {
@@ -110,12 +127,7 @@
             }
             start.setHours(0,0,0,0);
             end.setHours(23,59,59,999);
-            const toIso = (d) => {
-                const offset = d.getTimezoneOffset();
-                const local = new Date(d.getTime() - (offset*60*1000));
-                return local.toISOString().split('T')[0];
-            };
-            return { start: toIso(start), end: toIso(end) };
+            return { start: toLocalIsoDate(start), end: toLocalIsoDate(end) };
         };
 
         const getPeriodOptions = () => {
@@ -140,6 +152,7 @@
 
         const getMonday = (d) => {
             const date = new Date(d);
+            if (isNaN(date.getTime())) return new Date();
             const day = date.getDay();
             const diff = date.getDate() - day + (day === 0 ? -6 : 1);
             date.setDate(diff);
@@ -253,13 +266,13 @@
             const [newBossMessage, setNewBossMessage] = useState(''); 
             const [msgRecipient, setMsgRecipient] = useState('all'); 
             const [editEmpData, setEditEmpData] = useState({ id: '', name: '', pin: '', birthDate: '', overtimeBalance: 0, weeklyHours: 40, primaryRole: 'Service', accessLevel: 'user' }); 
-            const [manualLogData, setManualLogData] = useState({ employeeId: '', date: new Date().toISOString().split('T')[0], startTime: '08:00', endTime: '16:00' });
+            const [manualLogData, setManualLogData] = useState({ employeeId: '', date: toLocalIsoDate(new Date()), startTime: '08:00', endTime: '16:00' });
             const [settleData, setSettleData] = useState({ billedHours: 0, carryOver: 0 });
             const [manualOvertimeAmount, setManualOvertimeAmount] = useState('');
             const [manualOvertimeNote, setManualOvertimeNote] = useState('');
             
             // Dienstplan Eingabe
-            const [shiftData, setShiftData] = useState({ id: null, employeeId: '', date: '', startTime: '09:00', endTime: '17:00', role: 'Service' });
+            const [shiftData, setShiftData] = useState({ id: null, employeeId: '', date: '', role: 'Service' });
             const [newTemplate, setNewTemplate] = useState({ name: '', startTime: '08:00', endTime: '16:00' });
 
             const birthdayAlerts = useMemo(() => checkUpcomingBirthdays(employees), [employees]);
@@ -413,12 +426,12 @@
                 setIsProcessing(true);
                 try { showStatus("Standort-Check...", "info"); await verifyLocation(); } catch (gpsError) { const violationMsg = gpsError.toString() || "Standort Fehler"; await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'security_logs'), { employeeId: activeEmployee.id, employeeName: activeEmployee.name, timestamp: Timestamp.now(), reason: violationMsg }); showStatus(violationMsg, "error"); setIsProcessing(false); return; }
                 const activeLog = logs.find(l => l.employeeId === activeEmployee.id && !l.endTime);
-                try { if (activeLog) { setShowClockOutModal(true); setIsProcessing(false); return; } else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'timelogs'), { employeeId: activeEmployee.id, employeeName: activeEmployee.name, startTime: Timestamp.now(), endTime: null, date: new Date().toISOString().split('T')[0], note: '', isSettled: false }); showStatus(`Schicht gestartet: ${activeEmployee.name}`, "success"); } } catch (err) { showStatus("Cloud-Fehler", "error"); }
+                try { if (activeLog) { setShowClockOutModal(true); setIsProcessing(false); return; } else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'timelogs'), { employeeId: activeEmployee.id, employeeName: activeEmployee.name, startTime: Timestamp.now(), endTime: null, date: toLocalIsoDate(new Date()), note: '', isSettled: false }); showStatus(`Schicht gestartet: ${activeEmployee.name}`, "success"); } } catch (err) { showStatus("Cloud-Fehler", "error"); }
                 setIsProcessing(false);
             };
 
             const handleStopShiftInit = async () => { try { showStatus("Standort-Check...", "info"); await verifyLocation(); setClockOutNote(''); setShowClockOutModal(true); } catch(gpsError) { const violationMsg = gpsError.toString(); if (activeEmployee) { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'security_logs'), { employeeId: activeEmployee.id, employeeName: activeEmployee.name, timestamp: Timestamp.now(), reason: violationMsg }); } showStatus(gpsError, "error"); } };
-            const handleStartShift = async (targetEmpId) => { if (!user) return; const targetEmp = employees.find(e => e.id === targetEmpId); try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'timelogs'), { employeeId: targetEmp.id, employeeName: targetEmp.name, startTime: Timestamp.now(), endTime: null, date: new Date().toISOString().split('T')[0], note: '', isSettled: false }); showStatus(`Schicht gestartet: ${targetEmp.name}`, "success"); } catch (err) { showStatus("Fehler", "error"); } };
+            const handleStartShift = async (targetEmpId) => { if (!user) return; const targetEmp = employees.find(e => e.id === targetEmpId); try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'timelogs'), { employeeId: targetEmp.id, employeeName: targetEmp.name, startTime: Timestamp.now(), endTime: null, date: toLocalIsoDate(new Date()), note: '', isSettled: false }); showStatus(`Schicht gestartet: ${targetEmp.name}`, "success"); } catch (err) { showStatus("Fehler", "error"); } };
             const handleConfirmClockOut = async () => { if (!user) return; const empId = activeEmployee ? activeEmployee.id : selectedEmpForDetails?.id; const empName = activeEmployee ? activeEmployee.name : selectedEmpForDetails?.name; const activeLog = logs.find(l => l.employeeId === empId && !l.endTime); if (activeLog) { try { const now = Timestamp.now(); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', activeLog.id), { endTime: now, calculatedHours: calculateHours(activeLog.startTime, now), note: clockOutNote }); showStatus(`Schicht beendet: ${empName}`, "success"); setShowClockOutModal(false); setClockOutNote(''); } catch (err) { showStatus("Fehler", "error"); } } };
             const handleAdminStopShift = async (targetEmpId) => { if (!user) return; const activeLog = logs.find(l => l.employeeId === targetEmpId && !l.endTime); if (activeLog) { try { const now = Timestamp.now(); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', activeLog.id), { endTime: now, calculatedHours: calculateHours(activeLog.startTime, now), note: 'Admin Stop' }); showStatus(`Schicht beendet`, "success"); } catch (err) { showStatus("Fehler", "error"); } } };
             const handleDeleteLog = async (logId) => { if(!confirm("Eintrag wirklich löschen?")) return; try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', logId)); showStatus("Eintrag gelöscht", "success"); } catch(err) { showStatus("Fehler", "error"); } };
@@ -494,7 +507,7 @@
             };
 
             const handleSaveEdit = async (e) => { e.preventDefault(); if (!editingLog) return; try { const start = new Date(`${editingLog.date}T${editingLog.startTimeStr}`); let end = new Date(`${editingLog.date}T${editingLog.endTimeStr}`); if (end < start) end.setDate(end.getDate() + 1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', editingLog.id), { startTime: Timestamp.fromDate(start), endTime: Timestamp.fromDate(end), date: editingLog.date, calculatedHours: calculateHours(start, end), note: editingLog.note || '' }); setEditingLog(null); showStatus("Gespeichert", "success"); } catch (err) { showStatus("Fehler", "error"); } };
-            const handleSaveSettlement = async (e) => { e.preventDefault(); if (!selectedEmpForDetails) return; const billed = parseFloat(settleData.billedHours); const carryOver = parseFloat(settleData.carryOver); try { const batch = writeBatch(db); const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'employees', selectedEmpForDetails.id); batch.update(empRef, { overtimeBalance: carryOver }); const startLimit = new Date(period.start).getTime(); const endLimit = new Date(period.end).setHours(23, 59, 59, 999); const logsToSettle = logs.filter(l => { if (l.employeeId !== selectedEmpForDetails.id || l.isSettled || !l.endTime) return false; const d = safeDate(l.startTime).getTime(); return d >= startLimit && d <= endLimit; }); logsToSettle.forEach(log => { const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', log.id); batch.update(logRef, { isSettled: true }); }); const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements')); batch.set(settRef, { employeeId: selectedEmpForDetails.id, date: new Date().toISOString().split('T')[0], periodStart: period.start, periodEnd: period.end, paidHours: billed, newBalance: carryOver, type: 'settlement' }); await batch.commit(); setShowSettleModal(false); showStatus("Abrechnung erfolgreich!", "success"); } catch(err) { showStatus("Fehler", "error"); } };
+            const handleSaveSettlement = async (e) => { e.preventDefault(); if (!selectedEmpForDetails) return; const billed = parseFloat(settleData.billedHours); const carryOver = parseFloat(settleData.carryOver); try { const batch = writeBatch(db); const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'employees', selectedEmpForDetails.id); batch.update(empRef, { overtimeBalance: carryOver }); const startLimit = new Date(period.start).getTime(); const endLimit = new Date(period.end).setHours(23, 59, 59, 999); const logsToSettle = logs.filter(l => { if (l.employeeId !== selectedEmpForDetails.id || l.isSettled || !l.endTime) return false; const d = safeDate(l.startTime).getTime(); return d >= startLimit && d <= endLimit; }); logsToSettle.forEach(log => { const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', log.id); batch.update(logRef, { isSettled: true }); }); const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements')); batch.set(settRef, { employeeId: selectedEmpForDetails.id, date: toLocalIsoDate(new Date()), periodStart: period.start, periodEnd: period.end, paidHours: billed, newBalance: carryOver, type: 'settlement' }); await batch.commit(); setShowSettleModal(false); showStatus("Abrechnung erfolgreich!", "success"); } catch(err) { showStatus("Fehler", "error"); } };
             const handleManualLogSubmit = async (e) => { e.preventDefault(); const emp = employees.find(e => e.id === manualLogData.employeeId); const s = new Date(`${manualLogData.date}T${manualLogData.startTime}`); let end = new Date(`${manualLogData.date}T${manualLogData.endTime}`); if (end < s) end.setDate(end.getDate() + 1); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'timelogs'), { employeeId: emp.id, employeeName: emp.name, startTime: Timestamp.fromDate(s), endTime: Timestamp.fromDate(end), date: manualLogData.date, calculatedHours: calculateHours(s, end), note: 'Manuell', isSettled: false }); setShowManualLog(false); showStatus("Gebucht", "success"); };
             const handleManualOvertimeSubmit = async (e) => {
                 e.preventDefault();
@@ -508,7 +521,7 @@
                     batch.update(empRef, { overtimeBalance: newBalance });
                     const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements'));
                     batch.set(settRef, {
-                        employeeId: selectedEmpForDetails.id, date: new Date().toISOString().split('T')[0], type: 'manual_adjustment', amount: amount, note: manualOvertimeNote, newBalance: newBalance, settledAt: Timestamp.now()
+                        employeeId: selectedEmpForDetails.id, date: toLocalIsoDate(new Date()), type: 'manual_adjustment', amount: amount, note: manualOvertimeNote, newBalance: newBalance, settledAt: Timestamp.now()
                     });
                     await batch.commit();
                     setManualOvertimeAmount(''); setManualOvertimeNote('');
@@ -522,24 +535,27 @@
             // --- DIENSTPLAN LOGIK ---
             const daysOfWeek = useMemo(() => {
                 const days = [];
-                for(let i=0; i<7; i++) {
-                    const d = new Date(scheduleWeekStart);
-                    d.setDate(d.getDate() + i);
-                    days.push(d);
-                }
+                try {
+                    for(let i=0; i<7; i++) {
+                        const d = new Date(scheduleWeekStart);
+                        d.setDate(d.getDate() + i);
+                        days.push(d);
+                    }
+                } catch(e) {}
                 return days;
             }, [scheduleWeekStart]);
 
-            const shiftDatesStr = useMemo(() => daysOfWeek.map(d => d.toISOString().split('T')[0]), [daysOfWeek]);
-            const scheduleWeekEndStr = shiftDatesStr[6];
+            const shiftDatesStr = useMemo(() => daysOfWeek.map(d => toLocalIsoDate(d)), [daysOfWeek]);
 
             const empDaysOfWeek = useMemo(() => {
                 const days = [];
-                for(let i=0; i<7; i++) {
-                    const d = new Date(empScheduleWeekStart);
-                    d.setDate(d.getDate() + i);
-                    days.push(d);
-                }
+                try {
+                    for(let i=0; i<7; i++) {
+                        const d = new Date(empScheduleWeekStart);
+                        d.setDate(d.getDate() + i);
+                        days.push(d);
+                    }
+                } catch(e) {}
                 return days;
             }, [empScheduleWeekStart]);
 
@@ -684,7 +700,6 @@
                 } catch(err) { showStatus("Fehler", "error"); }
             };
 
-            // PDF EXPORT UPDATE - SAUBERE BOXEN OHNE SOLL/IST BERECHNUNGEN
             const handlePrintSchedule = () => {
                 const wochentageNamen = ['So','Mo','Di','Mi','Do','Fr','Sa'];
                 const daysHtml = daysOfWeek.map(d => `<th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:center;">${wochentageNamen[d.getDay()]}<br><small style="color:#666;">${d.getDate()}.${d.getMonth()+1}.</small></th>`).join('');
@@ -753,7 +768,75 @@
                 printWindow.document.close();
             };
 
+            const handlePrintTaxReport = () => {
+                const startLimit = new Date(period.start).getTime();
+                const endLimit = new Date(period.end).setHours(23, 59, 59, 999);
+                const reportRows = employees.map(emp => {
+                    const empLogs = logs.filter(l => {
+                        const d = safeDate(l.startTime).getTime();
+                        return l.employeeId === emp.id && d >= startLimit && d <= endLimit && l.endTime;
+                    });
+                    const totalHours = empLogs.reduce((acc, curr) => acc + parseFloat(curr.calculatedHours || 0), 0);
+                    return { name: emp.name, hours: totalHours.toFixed(2) };
+                });
+                const totalPeriodHours = reportRows.reduce((acc, curr) => acc + parseFloat(curr.hours), 0);
+                
+                const rowsHtml = reportRows.map(r => `<tr><td>${r.name}</td><td style="text-align: right;">${r.hours} h</td></tr>`).join('');
+                
+                const printWindow = window.open('', '_blank');
+                const scriptEnd = "</" + "script>";
+                
+                const htmlContent = `
+                    <html>
+                    <head>
+                        <title>Stundenabrechnung</title>
+                        <style>
+                            body { font-family: sans-serif; padding: 40px; color: #333; }
+                            h1 { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; font-size: 24px; }
+                            .meta { margin-bottom: 30px; font-size: 14px; color: #555; }
+                            table { width: 100%; border-collapse: collapse; font-size: 14px; }
+                            th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                            th { background-color: #f5f5f5; font-weight: bold; }
+                            tr:nth-child(even) { background-color: #fafafa; }
+                            .footer { margin-top: 50px; font-size: 12px; text-align: center; border-top: 1px solid #eee; padding-top: 10px; color: #999; }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>Stundenabrechnung</h1>
+                        <div class="meta">
+                            <p><strong>Zeitraum:</strong> ${formatDate(period.start)} bis ${formatDate(period.end)}</p>
+                            <p><strong>Erstellt am:</strong> ${new Date().toLocaleString('de-DE')}</p>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Mitarbeiter</th>
+                                    <th style="text-align: right;">Geleistete Stunden (Aktuell)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rowsHtml}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td style="font-weight: bold; text-align: right;">GESAMT:</td>
+                                    <td style="font-weight: bold; text-align: right;">${totalPeriodHours.toFixed(2)} h</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                        <div class="footer">MABELLE TIMER &bull; Steuer-Export</div>
+                        <script>window.onload = function() { window.print(); }${scriptEnd}
+                    </body>
+                    </html>
+                `;
+                
+                printWindow.document.write(htmlContent);
+                printWindow.document.close();
+            };
+
             if (loading && dbStatus === 'connecting') return <div className="h-screen flex items-center justify-center text-orange-600 font-bold bg-white"><RotateCw className="animate-spin mb-4" size={32} /> LOADING...</div>;
+
+            const currentMsg = getRelevantMessage();
 
             return (
                 <div className={`font-sans text-gray-900 ${(!activeEmployee && view === 'terminal') ? 'min-h-[100dvh] flex flex-col bg-gray-50' : 'min-h-[100dvh] bg-gray-50 pb-20'}`}>
@@ -818,7 +901,7 @@
                                 )}
 
                                 {/* Admin / Manager Access Buttons */}
-                                {(activeEmployee.accessLevel === 'admin' || activeEmployee.accessLevel === 'manager') && (
+                                {activeEmployee.accessLevel && (activeEmployee.accessLevel === 'admin' || activeEmployee.accessLevel === 'manager') && (
                                     <div className="flex flex-wrap gap-4 mb-4">
                                         {activeEmployee.accessLevel === 'admin' && (
                                             <button onClick={() => { setView('admin'); setAdminSubView('overview'); }} className="bg-gray-900 text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-lg hover:bg-black transition flex items-center gap-2">
@@ -836,7 +919,7 @@
                                 <div className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
                                     <div className="flex items-center gap-3"><Calendar size={18} className="text-orange-600" /><span className="font-black text-[10px] uppercase tracking-widest text-gray-500">Zeitraum wählen</span></div>
                                     <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-100">
-                                        <input type="date" value={period.start} onChange={(e) => setPeriod({...period, start: e.target.value})} className="bg-transparent font-bold text-xs p-1 outline-none" /><span className="text-gray-300">-</span><input type="date" value={period.end} onChange={(e) => setPeriod({...period, end: e.target.value})} className="bg-transparent font-bold text-xs p-1 outline-none" />
+                                        <input type="date" value={period?.start || ''} onChange={(e) => setPeriod({...period, start: e.target.value})} className="bg-transparent font-bold text-xs p-1 outline-none" /><span className="text-gray-300">-</span><input type="date" value={period?.end || ''} onChange={(e) => setPeriod({...period, end: e.target.value})} className="bg-transparent font-bold text-xs p-1 outline-none" />
                                     </div>
                                 </div>
 
@@ -877,9 +960,11 @@
                                     </div>
                                     <div className="grid grid-cols-7 gap-2">
                                         {empDaysOfWeek.map(d => {
-                                            const dateStr = d.toISOString().split('T')[0];
+                                            const dateStr = toLocalIsoDate(d);
+                                            if (!dateStr) return null;
                                             const isAvail = availabilities.some(a => a.employeeId === activeEmployee.id && a.date === dateStr);
-                                            const isPlanned = shifts.some(s => s.employeeId === activeEmployee.id && s.date === dateStr);
+                                            const plannedShift = shifts.find(s => s.employeeId === activeEmployee.id && s.date === dateStr);
+                                            const isPlanned = !!plannedShift;
                                             const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
                                             
                                             return (
@@ -887,13 +972,18 @@
                                                     key={dateStr}
                                                     onClick={() => toggleAvailability(activeEmployee.id, dateStr)}
                                                     disabled={isPlanned}
-                                                    className={`flex flex-col items-center justify-center p-2 sm:p-4 rounded-2xl border-2 transition-all relative overflow-hidden ${isPlanned ? 'border-orange-200 bg-orange-50 cursor-not-allowed opacity-80' : isAvail ? 'border-green-500 bg-green-50 text-green-700 shadow-md' : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-300'}`}
+                                                    className={`flex flex-col items-center justify-center p-1 sm:p-2 pb-10 sm:pb-12 rounded-2xl border-2 transition-all relative overflow-hidden ${isPlanned ? 'border-orange-200 bg-orange-50 cursor-not-allowed opacity-90' : isAvail ? 'border-green-500 bg-green-50 text-green-700 shadow-md' : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-300'}`}
                                                 >
-                                                    <span className={`text-[9px] sm:text-xs font-black uppercase mb-1 ${isPlanned ? 'text-orange-500' : ''}`}>{dayNames[d.getDay()]}</span>
-                                                    <span className={`text-lg sm:text-2xl font-black ${isPlanned ? 'text-orange-700' : ''}`}>{d.getDate()}</span>
+                                                    <span className={`text-[10px] sm:text-xs font-black uppercase mb-1 ${isPlanned ? 'text-orange-500' : ''}`}>{dayNames[d.getDay()]}</span>
+                                                    <span className={`text-xl sm:text-2xl font-black ${isPlanned ? 'text-orange-700' : ''}`}>{d.getDate()}</span>
                                                     
-                                                    {isPlanned && <span className="absolute bottom-1 text-[8px] font-black uppercase text-orange-600">Schicht</span>}
-                                                    {!isPlanned && isAvail && <span className="absolute bottom-1 text-[8px] font-black uppercase text-green-600">Verfügbar</span>}
+                                                    {isPlanned && (
+                                                        <div className="absolute bottom-1.5 w-full text-center leading-tight">
+                                                            <div className="text-[9px] sm:text-[10px] font-black uppercase text-orange-600 truncate px-0.5">{plannedShift.role || 'Schicht'}</div>
+                                                            <div className="text-[10px] sm:text-xs font-bold text-orange-500 tracking-tighter mt-0.5">{plannedShift.startTime}-{plannedShift.endTime}</div>
+                                                        </div>
+                                                    )}
+                                                    {!isPlanned && isAvail && <span className="absolute bottom-2 text-[8px] sm:text-[10px] font-black uppercase text-green-600">Verfügbar</span>}
                                                 </button>
                                             )
                                         })}
@@ -1033,7 +1123,7 @@
                                             <button onClick={() => { const d = new Date(scheduleWeekStart); d.setDate(d.getDate() + 7); setScheduleWeekStart(d); }} className="p-3 text-gray-500 hover:bg-white rounded-xl"><ChevronRight size={20}/></button>
                                          </div>
                                          <div className="flex items-center gap-2 flex-wrap">
-                                            <div className="bg-gray-100 px-4 py-3 rounded-2xl text-xs font-bold text-gray-500 hidden lg:block">Abrechnungsmonat: {formatDate(period.start)} - {formatDate(period.end)}</div>
+                                            <div className="bg-gray-100 px-4 py-3 rounded-2xl text-xs font-bold text-gray-500 hidden lg:block">Abrechnungsmonat: {formatDate(period?.start)} - {formatDate(period?.end)}</div>
                                             <button 
                                               onClick={() => setShowShiftTemplateModal(true)} 
                                               className="bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 px-4 py-3 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 transition"
@@ -1069,7 +1159,7 @@
                                                            <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase border-b border-r border-gray-200 w-[14%]">Mitarbeiter</th>
                                                            {daysOfWeek.map((d, i) => (
                                                               <th key={i} className={`px-2 py-4 text-center border-b border-r border-gray-200 w-[10%] ${i===6 ? 'bg-orange-50/30' : ''}`}>
-                                                                 <div className="text-[10px] font-black text-gray-400 uppercase">{['Mo','Di','Mi','Do','Fr','Sa','So'][i]}</div>
+                                                                 <div className="text-[10px] font-black text-gray-400 uppercase">{['Mo','Di','Mi','Do','Fr','Sa','So'][d.getDay()]}</div>
                                                                  <div className="text-sm font-bold text-gray-800">{d.getDate()}.</div>
                                                               </th>
                                                            ))}
@@ -1081,7 +1171,7 @@
                                                          {group.emps.map(emp => {
                                                            const targetW = parseFloat(emp.weeklyHours || 0);
                                                            const weekPlanned = parseFloat(getPlannedHoursForPeriod(emp.id, shiftDatesStr[0], shiftDatesStr[6]));
-                                                           const monthPlanned = parseFloat(getPlannedHoursForPeriod(emp.id, period.start, period.end));
+                                                           const monthPlanned = parseFloat(getPlannedHoursForPeriod(emp.id, period?.start, period?.end));
                                                            
                                                            return (
                                                               <tr key={emp.id} className="hover:bg-gray-50/30 transition group">
