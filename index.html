@@ -267,8 +267,8 @@
             const [manualOvertimeNote, setManualOvertimeNote] = useState('');
             
             // Dienstplan Eingabe
-            const [shiftData, setShiftData] = useState({ id: null, employeeId: '', date: '', role: 'Service' });
-            const [newTemplate, setNewTemplate] = useState({ name: '', startTime: '08:00', endTime: '16:00', color: '#f97316' });
+            const [shiftData, setShiftData] = useState({ id: null, employeeId: '', date: '', startTime: '09:00', endTime: '17:00', role: 'Service', color: '#f97316' });
+            const [newTemplate, setNewTemplate] = useState({ id: null, name: '', startTime: '08:00', endTime: '16:00', color: '#f97316' });
 
             const birthdayAlerts = useMemo(() => checkUpcomingBirthdays(employees), [employees]);
 
@@ -608,11 +608,11 @@
                     
                     if (shiftData.id) {
                         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftData.id), {
-                            startTime: shiftData.startTime, endTime: shiftData.endTime, calculatedHours: calc, role: shiftData.role
+                            startTime: shiftData.startTime, endTime: shiftData.endTime, calculatedHours: calc, role: shiftData.role, color: shiftData.color || '#f97316'
                         });
                     } else {
                         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shifts'), {
-                            employeeId: shiftData.employeeId, date: shiftData.date, startTime: shiftData.startTime, endTime: shiftData.endTime, calculatedHours: calc, role: shiftData.role, color: '#f97316'
+                            employeeId: shiftData.employeeId, date: shiftData.date, startTime: shiftData.startTime, endTime: shiftData.endTime, calculatedHours: calc, role: shiftData.role, color: shiftData.color || '#f97316'
                         });
                     }
                     setShowShiftModal(false); showStatus("Schicht gespeichert", "success");
@@ -695,12 +695,19 @@
                 setIsProcessing(false);
             };
 
-            const handleAddTemplate = async (e) => {
+            const handleSaveTemplate = async (e) => {
                 e.preventDefault();
                 try {
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shift_templates'), newTemplate);
-                    setNewTemplate({ name: '', startTime: '08:00', endTime: '16:00', color: '#f97316' });
-                    showStatus("Vorlage gespeichert", "success");
+                    if (newTemplate.id) {
+                        const { id, ...data } = newTemplate;
+                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shift_templates', id), data);
+                        showStatus("Vorlage aktualisiert", "success");
+                    } else {
+                        const { id, ...data } = newTemplate;
+                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shift_templates'), data);
+                        showStatus("Vorlage gespeichert", "success");
+                    }
+                    setNewTemplate({ id: null, name: '', startTime: '08:00', endTime: '16:00', color: '#f97316' });
                 } catch(err) { showStatus("Fehler", "error"); }
             };
 
@@ -711,7 +718,6 @@
                 } catch(err) { showStatus("Fehler", "error"); }
             };
 
-            // PDF EXPORT
             const handlePrintSchedule = () => {
                 const daysHtml = daysOfWeek.map(d => `<th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:center; width:12%;">${formatDayDate(d)}</th>`).join('');
 
@@ -721,7 +727,7 @@
                             const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr && (s.role === group.role || (!s.role && group.role === 'Service')));
                             
                             if (shift) {
-                                const sColor = shift.color || '#16a34a';
+                                const sColor = shift.color || '#f97316';
                                 return `<td style="padding:5px; border:1px solid #ddd; text-align:center; vertical-align:middle; width:12%;">
                                     <div style="padding: 4px; border: 1px solid ${sColor}; background: ${sColor}1a; border-radius: 4px;">
                                         <div style="font-weight:bold; font-size:11px; color:${sColor};">${shift.startTime} - ${shift.endTime}</div>
@@ -781,7 +787,75 @@
                 printWindow.document.close();
             };
 
+            const handlePrintTaxReport = () => {
+                const startLimit = new Date(period.start).getTime();
+                const endLimit = new Date(period.end).setHours(23, 59, 59, 999);
+                const reportRows = employees.map(emp => {
+                    const empLogs = logs.filter(l => {
+                        const d = safeDate(l.startTime).getTime();
+                        return l.employeeId === emp.id && d >= startLimit && d <= endLimit && l.endTime;
+                    });
+                    const totalHours = empLogs.reduce((acc, curr) => acc + parseFloat(curr.calculatedHours || 0), 0);
+                    return { name: emp.name, hours: totalHours.toFixed(2) };
+                });
+                const totalPeriodHours = reportRows.reduce((acc, curr) => acc + parseFloat(curr.hours), 0);
+                
+                const rowsHtml = reportRows.map(r => `<tr><td>${r.name}</td><td style="text-align: right;">${r.hours} h</td></tr>`).join('');
+                
+                const printWindow = window.open('', '_blank');
+                const scriptEnd = "</" + "script>";
+                
+                const htmlContent = `
+                    <html>
+                    <head>
+                        <title>Stundenabrechnung</title>
+                        <style>
+                            body { font-family: sans-serif; padding: 40px; color: #333; }
+                            h1 { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; font-size: 24px; }
+                            .meta { margin-bottom: 30px; font-size: 14px; color: #555; }
+                            table { width: 100%; border-collapse: collapse; font-size: 14px; }
+                            th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                            th { background-color: #f5f5f5; font-weight: bold; }
+                            tr:nth-child(even) { background-color: #fafafa; }
+                            .footer { margin-top: 50px; font-size: 12px; text-align: center; border-top: 1px solid #eee; padding-top: 10px; color: #999; }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>Stundenabrechnung</h1>
+                        <div class="meta">
+                            <p><strong>Zeitraum:</strong> ${formatDate(period.start)} bis ${formatDate(period.end)}</p>
+                            <p><strong>Erstellt am:</strong> ${new Date().toLocaleString('de-DE')}</p>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Mitarbeiter</th>
+                                    <th style="text-align: right;">Geleistete Stunden (Aktuell)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rowsHtml}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td style="font-weight: bold; text-align: right;">GESAMT:</td>
+                                    <td style="font-weight: bold; text-align: right;">${totalPeriodHours.toFixed(2)} h</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                        <div class="footer">MABELLE TIMER &bull; Steuer-Export</div>
+                        <script>window.onload = function() { window.print(); }${scriptEnd}
+                    </body>
+                    </html>
+                `;
+                
+                printWindow.document.write(htmlContent);
+                printWindow.document.close();
+            };
+
             if (loading && dbStatus === 'connecting') return <div className="h-screen flex items-center justify-center text-orange-600 font-bold bg-white"><RotateCw className="animate-spin mb-4" size={32} /> LOADING...</div>;
+
+            const currentMsg = getRelevantMessage();
 
             return (
                 <div className={`font-sans text-gray-900 ${(!activeEmployee && view === 'terminal') ? 'min-h-[100dvh] flex flex-col bg-gray-50' : 'min-h-[100dvh] bg-gray-50 pb-20'}`}>
@@ -910,6 +984,7 @@
                                             const isAvail = availabilities.some(a => a.employeeId === activeEmployee.id && a.date === dateStr);
                                             const plannedShift = shifts.find(s => s.employeeId === activeEmployee.id && s.date === dateStr);
                                             const isPlanned = !!plannedShift;
+                                            const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
                                             
                                             return (
                                                 <button
@@ -918,7 +993,7 @@
                                                     disabled={isPlanned}
                                                     className={`flex flex-col items-center justify-center p-1 sm:p-2 pb-10 sm:pb-12 rounded-2xl border-2 transition-all relative overflow-hidden ${isPlanned ? 'border-orange-200 bg-orange-50 cursor-not-allowed opacity-90' : isAvail ? 'border-green-500 bg-green-50 text-green-700 shadow-md' : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-300'}`}
                                                 >
-                                                    <span className={`text-[10px] sm:text-xs font-black uppercase mb-1 ${isPlanned ? 'text-orange-500' : ''}`}>{formatDayDate(d).split(' - ')[0]}</span>
+                                                    <span className={`text-[10px] sm:text-xs font-black uppercase mb-1 ${isPlanned ? 'text-orange-500' : ''}`}>{dayNames[d.getDay()]}</span>
                                                     <span className={`text-xl sm:text-2xl font-black ${isPlanned ? 'text-orange-700' : ''}`}>{d.getDate()}</span>
                                                     
                                                     {isPlanned && (
@@ -1062,7 +1137,7 @@
                                          <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100">
                                             <button onClick={() => { const d = new Date(scheduleWeekStart); d.setDate(d.getDate() - 7); setScheduleWeekStart(d); }} className="p-3 text-gray-500 hover:bg-white rounded-xl"><ChevronLeft size={20}/></button>
                                             <div className="px-4 font-bold text-sm text-gray-800 text-center min-w-[140px]">
-                                               {formatDate(daysOfWeek[0]).substring(0, 5)} - {formatDate(daysOfWeek[6]).substring(0, 5)}
+                                               {formatDayDate(daysOfWeek[0]).split(' - ')[1]} - {formatDayDate(daysOfWeek[6]).split(' - ')[1]}
                                             </div>
                                             <button onClick={() => { const d = new Date(scheduleWeekStart); d.setDate(d.getDate() + 7); setScheduleWeekStart(d); }} className="p-3 text-gray-500 hover:bg-white rounded-xl"><ChevronRight size={20}/></button>
                                          </div>
@@ -1130,7 +1205,7 @@
                                                                        <td key={dateStr} className={`border-r border-gray-100 p-2 align-middle ${idx===6 ? 'bg-orange-50/10' : ''}`}>
                                                                           {shift ? (
                                                                              <div 
-                                                                                onClick={() => { setShiftData({ id: shift.id, employeeId: emp.id, date: dateStr, startTime: shift.startTime, endTime: shift.endTime, role: shift.role || group.role }); setShowShiftModal(true); }}
+                                                                                onClick={() => { setShiftData({ id: shift.id, employeeId: emp.id, date: dateStr, startTime: shift.startTime, endTime: shift.endTime, role: shift.role || group.role, color: shift.color || '#f97316' }); setShowShiftModal(true); }}
                                                                                 className="rounded-xl p-2 cursor-pointer transition relative group/shift flex flex-col items-center justify-center min-h-[64px]"
                                                                                 style={{ backgroundColor: (shift.color || '#f97316') + '1a', border: '1px solid ' + (shift.color || '#f97316') }}
                                                                              >
@@ -1190,7 +1265,7 @@
                                         <button onClick={() => setShowShiftTemplateModal(false)} className="text-gray-400"><X size={24}/></button>
                                     </div>
                                     
-                                    <form onSubmit={handleAddTemplate} className="space-y-3 mb-8 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                                    <form onSubmit={handleSaveTemplate} className="space-y-3 mb-8 bg-gray-50 p-4 rounded-2xl border border-gray-100">
                                         <input type="text" placeholder="Name (z.B. Frühschicht)" required value={newTemplate.name} onChange={e=>setNewTemplate({...newTemplate, name:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
                                         <div className="grid grid-cols-2 gap-2 mb-3">
                                             <input type="time" required value={newTemplate.startTime} onChange={e=>setNewTemplate({...newTemplate, startTime:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
@@ -1210,7 +1285,14 @@
                                                 ))}
                                             </div>
                                         </div>
-                                        <button type="submit" className="w-full bg-orange-600 text-white py-3 rounded-xl font-bold text-sm shadow-md hover:bg-orange-700">Vorlage hinzufügen</button>
+                                        <button type="submit" className="w-full bg-orange-600 text-white py-3 rounded-xl font-bold text-sm shadow-md hover:bg-orange-700">
+                                            {newTemplate.id ? 'Änderungen speichern' : 'Vorlage hinzufügen'}
+                                        </button>
+                                        {newTemplate.id && (
+                                            <button type="button" onClick={() => setNewTemplate({ id: null, name: '', startTime: '08:00', endTime: '16:00', color: '#f97316' })} className="w-full bg-gray-200 text-gray-600 py-3 rounded-xl font-bold text-sm shadow-sm hover:bg-gray-300 mt-2">
+                                                Abbrechen
+                                            </button>
+                                        )}
                                     </form>
 
                                     <div className="space-y-2">
@@ -1225,7 +1307,10 @@
                                                         <p className="text-[10px] font-bold text-gray-500 uppercase">{t.startTime} - {t.endTime}</p>
                                                     </div>
                                                 </div>
-                                                <button onClick={() => handleDeleteTemplate(t.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 size={16}/></button>
+                                                <div className="flex items-center gap-1">
+                                                    <button onClick={() => setNewTemplate(t)} className="text-gray-300 hover:text-orange-600 p-2"><Edit3 size={16}/></button>
+                                                    <button onClick={() => handleDeleteTemplate(t.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 size={16}/></button>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
