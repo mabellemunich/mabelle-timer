@@ -65,6 +65,9 @@
         const ADMIN_PIN_DEFAULT = "311088";
         const SHOP_COORDS = { lat: 48.1814, lng: 11.5323, radius: 300 };
 
+        const AVAILABLE_ROLES = ['Service', 'Bar', 'Küche', 'Runner', 'Garderobe', 'Event'];
+        const SHIFT_COLORS = ['#f97316', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#ec4899', '#06b6d4', '#eab308', '#6b7280'];
+
         // --- HELPER FUNKTIONEN ---
         const safeDate = (val) => {
             if (!val) return new Date();
@@ -93,6 +96,18 @@
                 const month = String(d.getMonth() + 1).padStart(2, '0');
                 const year = d.getFullYear();
                 return `${day}.${month}.${year}`;
+            } catch(e) {
+                return '';
+            }
+        };
+
+        const formatDayDate = (d) => {
+            try {
+                if (!d || isNaN(d.getTime())) return '';
+                const days = ['So.', 'Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.'];
+                const dayStr = String(d.getDate()).padStart(2, '0');
+                const monthStr = String(d.getMonth() + 1).padStart(2, '0');
+                return `${days[d.getDay()]} - ${dayStr}.${monthStr}.`;
             } catch(e) {
                 return '';
             }
@@ -128,26 +143,6 @@
             start.setHours(0,0,0,0);
             end.setHours(23,59,59,999);
             return { start: toLocalIsoDate(start), end: toLocalIsoDate(end) };
-        };
-
-        const getPeriodOptions = () => {
-            const options = [];
-            const today = new Date();
-            for (let i = -12; i <= 2; i++) {
-                const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
-                const year = d.getFullYear();
-                const month = d.getMonth();
-                const start = new Date(year, month, 16);
-                const end = new Date(year, month + 1, 15);
-                const toIso = (dateObj) => {
-                    const offset = dateObj.getTimezoneOffset();
-                    const local = new Date(dateObj.getTime() - (offset*60*1000));
-                    return local.toISOString().split('T')[0];
-                };
-                const label = `${formatDate(start)} bis ${formatDate(end)}`;
-                options.push({ label: label, value: JSON.stringify({ start: toIso(start), end: toIso(end) }), startIso: toIso(start) });
-            }
-            return options;
         };
 
         const getMonday = (d) => {
@@ -273,7 +268,7 @@
             
             // Dienstplan Eingabe
             const [shiftData, setShiftData] = useState({ id: null, employeeId: '', date: '', role: 'Service' });
-            const [newTemplate, setNewTemplate] = useState({ name: '', startTime: '08:00', endTime: '16:00' });
+            const [newTemplate, setNewTemplate] = useState({ name: '', startTime: '08:00', endTime: '16:00', color: '#f97316' });
 
             const birthdayAlerts = useMemo(() => checkUpcomingBirthdays(employees), [employees]);
 
@@ -486,23 +481,24 @@
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'employees'), { 
                         name: newEmpName, pin: newEmpPin, birthDate: newEmpBirthDate, overtimeBalance: 0, 
                         weeklyHours: parseFloat(newEmpWeeklyHours) || 0,
-                        primaryRole: newEmpRole,
+                        roles: newEmpRoles,
                         accessLevel: newEmpAccess
                     }); 
-                    setNewEmpName(''); setNewEmpPin(''); setNewEmpBirthDate(''); setNewEmpWeeklyHours('40'); setNewEmpRole('Service'); setNewEmpAccess('user'); setShowAddEmployee(false); 
+                    setNewEmpName(''); setNewEmpPin(''); setNewEmpBirthDate(''); setNewEmpWeeklyHours('40'); setNewEmpRoles(['Service']); setNewEmpAccess('user'); setShowAddEmployee(false); 
                     showStatus("Mitarbeiter angelegt", "success"); 
                 } catch (err) { showStatus("Fehler beim Speichern", "error"); } 
             };
+
             const handleEditEmployee = async (e) => { 
                 e.preventDefault(); 
                 if (employees.some(emp => emp.pin === editEmpData.pin && emp.id !== editEmpData.id)) { showStatus("PIN vergeben", "error"); return; } 
                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'employees', editEmpData.id), { 
                     name: editEmpData.name, pin: editEmpData.pin, birthDate: editEmpData.birthDate, overtimeBalance: parseFloat(editEmpData.overtimeBalance), 
                     weeklyHours: parseFloat(editEmpData.weeklyHours) || 0,
-                    primaryRole: editEmpData.primaryRole || 'Service',
+                    roles: editEmpData.roles || ['Service'],
                     accessLevel: editEmpData.accessLevel || 'user'
                 }); 
-                setSelectedEmpForDetails(prev => ({...prev, name: editEmpData.name, pin: editEmpData.pin, birthDate: editEmpData.birthDate, overtimeBalance: editEmpData.overtimeBalance, weeklyHours: editEmpData.weeklyHours, primaryRole: editEmpData.primaryRole, accessLevel: editEmpData.accessLevel})); 
+                setSelectedEmpForDetails(prev => ({...prev, name: editEmpData.name, pin: editEmpData.pin, birthDate: editEmpData.birthDate, overtimeBalance: editEmpData.overtimeBalance, weeklyHours: editEmpData.weeklyHours, roles: editEmpData.roles, accessLevel: editEmpData.accessLevel})); 
                 setShowEditEmpModal(false); showStatus("Profil aktualisiert", "success"); 
             };
 
@@ -559,14 +555,24 @@
                 return days;
             }, [empScheduleWeekStart]);
 
-            // MITARBEITER GRUPPIERUNG FÜR DIE ANSICHT
+            // MITARBEITER GRUPPIERUNG
             const groupedEmployees = useMemo(() => {
-                const groups = [
-                    { role: 'Service', emps: employees.filter(e => e.primaryRole === 'Service' || !e.primaryRole) },
-                    { role: 'Bar', emps: employees.filter(e => e.primaryRole === 'Bar') },
-                    { role: 'Küche', emps: employees.filter(e => e.primaryRole === 'Küche') },
-                    { role: 'Andere', emps: employees.filter(e => e.primaryRole && !['Service','Bar','Küche'].includes(e.primaryRole)) }
-                ];
+                const groups = AVAILABLE_ROLES.map(role => ({
+                    role: role,
+                    emps: employees.filter(e => {
+                        const empRoles = e.roles || (e.primaryRole ? [e.primaryRole] : ['Service']);
+                        return empRoles.includes(role);
+                    })
+                }));
+                
+                const otherEmps = employees.filter(e => {
+                     const empRoles = e.roles || (e.primaryRole ? [e.primaryRole] : ['Service']);
+                     return !empRoles.some(r => AVAILABLE_ROLES.includes(r));
+                });
+                if (otherEmps.length > 0) {
+                    groups.push({ role: 'Andere', emps: otherEmps });
+                }
+
                 return groups.filter(g => g.emps.length > 0);
             }, [employees]);
 
@@ -577,13 +583,15 @@
                     if (end < start) end.setDate(end.getDate() + 1);
                     const calc = calculateHours(start, end);
                     
+                    const shiftColor = template.color || '#f97316';
+                    
                     if (shiftData.id) {
                         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftData.id), {
-                            startTime: template.startTime, endTime: template.endTime, calculatedHours: calc, role: shiftData.role
+                            startTime: template.startTime, endTime: template.endTime, calculatedHours: calc, role: shiftData.role, color: shiftColor
                         });
                     } else {
                         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shifts'), {
-                            employeeId: shiftData.employeeId, date: shiftData.date, startTime: template.startTime, endTime: template.endTime, calculatedHours: calc, role: shiftData.role
+                            employeeId: shiftData.employeeId, date: shiftData.date, startTime: template.startTime, endTime: template.endTime, calculatedHours: calc, role: shiftData.role, color: shiftColor
                         });
                     }
                     setShowShiftModal(false); showStatus("Schicht gespeichert", "success");
@@ -604,7 +612,7 @@
                         });
                     } else {
                         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shifts'), {
-                            employeeId: shiftData.employeeId, date: shiftData.date, startTime: shiftData.startTime, endTime: shiftData.endTime, calculatedHours: calc, role: shiftData.role
+                            employeeId: shiftData.employeeId, date: shiftData.date, startTime: shiftData.startTime, endTime: shiftData.endTime, calculatedHours: calc, role: shiftData.role, color: '#f97316'
                         });
                     }
                     setShowShiftModal(false); showStatus("Schicht gespeichert", "success");
@@ -661,9 +669,12 @@
                             const eDate = new Date(`${dateStr}T${endStrTime}`);
                             const calc = calculateHours(sDate, eDate);
                             
+                            const empRoles = emp.roles || (emp.primaryRole ? [emp.primaryRole] : ['Service']);
+                            const defaultRole = empRoles.length > 0 ? empRoles[0] : 'Service';
+
                             const shiftRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'shifts'));
                             batch.set(shiftRef, {
-                                employeeId: emp.id, date: dateStr, startTime: startStrTime, endTime: endStrTime, calculatedHours: calc, role: emp.primaryRole || 'Service'
+                                employeeId: emp.id, date: dateStr, startTime: startStrTime, endTime: endStrTime, calculatedHours: calc, role: defaultRole, color: '#3b82f6'
                             });
                             
                             currentPlanned += parseFloat(calc);
@@ -688,7 +699,7 @@
                 e.preventDefault();
                 try {
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shift_templates'), newTemplate);
-                    setNewTemplate({ name: '', startTime: '08:00', endTime: '16:00' });
+                    setNewTemplate({ name: '', startTime: '08:00', endTime: '16:00', color: '#f97316' });
                     showStatus("Vorlage gespeichert", "success");
                 } catch(err) { showStatus("Fehler", "error"); }
             };
@@ -700,23 +711,24 @@
                 } catch(err) { showStatus("Fehler", "error"); }
             };
 
+            // PDF EXPORT
             const handlePrintSchedule = () => {
-                const wochentageNamen = ['So','Mo','Di','Mi','Do','Fr','Sa'];
-                const daysHtml = daysOfWeek.map(d => `<th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:center;">${wochentageNamen[d.getDay()]}<br><small style="color:#666;">${d.getDate()}.${d.getMonth()+1}.</small></th>`).join('');
+                const daysHtml = daysOfWeek.map(d => `<th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:center; width:12%;">${formatDayDate(d)}</th>`).join('');
 
                 const tablesHtml = groupedEmployees.map(group => {
                     const empsHtml = group.emps.map(emp => {
                         const cells = shiftDatesStr.map(dateStr => {
-                            const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr);
+                            const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr && (s.role === group.role || (!s.role && group.role === 'Service')));
                             
                             if (shift) {
-                                return `<td style="padding:5px; border:1px solid #ddd; text-align:center; vertical-align:middle; min-width: 60px;">
-                                    <div style="padding: 4px; border: 1px solid #bbf7d0; background: #f0fdf4; border-radius: 4px;">
-                                        <div style="font-weight:bold; font-size:11px; color:#166534;">${shift.startTime} - ${shift.endTime}</div>
+                                const sColor = shift.color || '#16a34a';
+                                return `<td style="padding:5px; border:1px solid #ddd; text-align:center; vertical-align:middle; width:12%;">
+                                    <div style="padding: 4px; border: 1px solid ${sColor}; background: ${sColor}1a; border-radius: 4px;">
+                                        <div style="font-weight:bold; font-size:11px; color:${sColor};">${shift.startTime} - ${shift.endTime}</div>
                                     </div>
                                 </td>`;
                             }
-                            return `<td style="padding:5px; border:1px solid #ddd; text-align:center; color:#ccc;">-</td>`;
+                            return `<td style="padding:5px; border:1px solid #ddd; text-align:center; color:#ccc; width:12%;">-</td>`;
                         }).join('');
                         
                         return `<tr>
@@ -728,10 +740,10 @@
                     return `
                     <div style="margin-bottom: 30px;">
                         <div style="background:#e5e7eb; padding:10px; font-weight:bold; text-transform:uppercase; font-size:12px; color:#4b5563; border:1px solid #ddd; border-bottom:none;">${group.role}</div>
-                        <table style="width:100%; border-collapse:collapse;">
+                        <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
                             <thead>
                                 <tr>
-                                    <th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:left; width: 150px;">Mitarbeiter</th>
+                                    <th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:left; width: 16%;">Mitarbeiter</th>
                                     ${daysHtml}
                                 </tr>
                             </thead>
@@ -751,11 +763,12 @@
                             body { font-family: sans-serif; padding: 20px; color: #111827; }
                             h1 { border-bottom: 2px solid #ea580c; padding-bottom: 10px; margin-bottom: 20px; font-size: 24px; color: #111827; }
                             table { font-size: 12px; }
+                            th, td { overflow: hidden; word-wrap: break-word; }
                             .footer { margin-top: 30px; font-size: 10px; text-align: center; color: #9ca3af; }
                         </style>
                     </head>
                     <body>
-                        <h1>Dienstplan: ${formatDate(daysOfWeek[0])} - ${formatDate(daysOfWeek[6])}</h1>
+                        <h1>Dienstplan: ${formatDayDate(daysOfWeek[0]).split(' - ')[1]} - ${formatDayDate(daysOfWeek[6]).split(' - ')[1]}</h1>
                         ${tablesHtml}
                         <div class="footer">Generiert von MABELLE TIMER am ${new Date().toLocaleString('de-DE')}</div>
                         <script>window.onload = function() { window.print(); }<\/script>
@@ -768,75 +781,7 @@
                 printWindow.document.close();
             };
 
-            const handlePrintTaxReport = () => {
-                const startLimit = new Date(period.start).getTime();
-                const endLimit = new Date(period.end).setHours(23, 59, 59, 999);
-                const reportRows = employees.map(emp => {
-                    const empLogs = logs.filter(l => {
-                        const d = safeDate(l.startTime).getTime();
-                        return l.employeeId === emp.id && d >= startLimit && d <= endLimit && l.endTime;
-                    });
-                    const totalHours = empLogs.reduce((acc, curr) => acc + parseFloat(curr.calculatedHours || 0), 0);
-                    return { name: emp.name, hours: totalHours.toFixed(2) };
-                });
-                const totalPeriodHours = reportRows.reduce((acc, curr) => acc + parseFloat(curr.hours), 0);
-                
-                const rowsHtml = reportRows.map(r => `<tr><td>${r.name}</td><td style="text-align: right;">${r.hours} h</td></tr>`).join('');
-                
-                const printWindow = window.open('', '_blank');
-                const scriptEnd = "</" + "script>";
-                
-                const htmlContent = `
-                    <html>
-                    <head>
-                        <title>Stundenabrechnung</title>
-                        <style>
-                            body { font-family: sans-serif; padding: 40px; color: #333; }
-                            h1 { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; font-size: 24px; }
-                            .meta { margin-bottom: 30px; font-size: 14px; color: #555; }
-                            table { width: 100%; border-collapse: collapse; font-size: 14px; }
-                            th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                            th { background-color: #f5f5f5; font-weight: bold; }
-                            tr:nth-child(even) { background-color: #fafafa; }
-                            .footer { margin-top: 50px; font-size: 12px; text-align: center; border-top: 1px solid #eee; padding-top: 10px; color: #999; }
-                        </style>
-                    </head>
-                    <body>
-                        <h1>Stundenabrechnung</h1>
-                        <div class="meta">
-                            <p><strong>Zeitraum:</strong> ${formatDate(period.start)} bis ${formatDate(period.end)}</p>
-                            <p><strong>Erstellt am:</strong> ${new Date().toLocaleString('de-DE')}</p>
-                        </div>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Mitarbeiter</th>
-                                    <th style="text-align: right;">Geleistete Stunden (Aktuell)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${rowsHtml}
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <td style="font-weight: bold; text-align: right;">GESAMT:</td>
-                                    <td style="font-weight: bold; text-align: right;">${totalPeriodHours.toFixed(2)} h</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                        <div class="footer">MABELLE TIMER &bull; Steuer-Export</div>
-                        <script>window.onload = function() { window.print(); }${scriptEnd}
-                    </body>
-                    </html>
-                `;
-                
-                printWindow.document.write(htmlContent);
-                printWindow.document.close();
-            };
-
             if (loading && dbStatus === 'connecting') return <div className="h-screen flex items-center justify-center text-orange-600 font-bold bg-white"><RotateCw className="animate-spin mb-4" size={32} /> LOADING...</div>;
-
-            const currentMsg = getRelevantMessage();
 
             return (
                 <div className={`font-sans text-gray-900 ${(!activeEmployee && view === 'terminal') ? 'min-h-[100dvh] flex flex-col bg-gray-50' : 'min-h-[100dvh] bg-gray-50 pb-20'}`}>
@@ -953,7 +898,7 @@
                                         <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100 w-full sm:w-auto">
                                             <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() - 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronLeft size={16}/></button>
                                             <div className="flex-1 sm:w-32 font-bold text-xs text-gray-800 text-center">
-                                               {empDaysOfWeek.length > 0 ? `${formatDate(empDaysOfWeek[0]).substring(0, 5)} - ${formatDate(empDaysOfWeek[6]).substring(0, 5)}` : ''}
+                                               {empDaysOfWeek.length > 0 ? `${formatDayDate(empDaysOfWeek[0]).split(' - ')[1]} - ${formatDayDate(empDaysOfWeek[6]).split(' - ')[1]}` : ''}
                                             </div>
                                             <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() + 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronRight size={16}/></button>
                                         </div>
@@ -965,7 +910,6 @@
                                             const isAvail = availabilities.some(a => a.employeeId === activeEmployee.id && a.date === dateStr);
                                             const plannedShift = shifts.find(s => s.employeeId === activeEmployee.id && s.date === dateStr);
                                             const isPlanned = !!plannedShift;
-                                            const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
                                             
                                             return (
                                                 <button
@@ -974,7 +918,7 @@
                                                     disabled={isPlanned}
                                                     className={`flex flex-col items-center justify-center p-1 sm:p-2 pb-10 sm:pb-12 rounded-2xl border-2 transition-all relative overflow-hidden ${isPlanned ? 'border-orange-200 bg-orange-50 cursor-not-allowed opacity-90' : isAvail ? 'border-green-500 bg-green-50 text-green-700 shadow-md' : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-300'}`}
                                                 >
-                                                    <span className={`text-[10px] sm:text-xs font-black uppercase mb-1 ${isPlanned ? 'text-orange-500' : ''}`}>{dayNames[d.getDay()]}</span>
+                                                    <span className={`text-[10px] sm:text-xs font-black uppercase mb-1 ${isPlanned ? 'text-orange-500' : ''}`}>{formatDayDate(d).split(' - ')[0]}</span>
                                                     <span className={`text-xl sm:text-2xl font-black ${isPlanned ? 'text-orange-700' : ''}`}>{d.getDate()}</span>
                                                     
                                                     {isPlanned && (
@@ -1053,7 +997,7 @@
                                             <div className="flex justify-between items-center">
                                                 <button onClick={() => setSelectedEmpForDetails(null)} className="flex items-center gap-2 text-gray-400 font-bold text-sm uppercase"><ArrowLeft size={16} /> Übersicht</button>
                                                 <div className="flex gap-2">
-                                                    <button onClick={() => { setEditEmpData({ id: selectedEmpForDetails.id, name: selectedEmpForDetails.name, pin: selectedEmpForDetails.pin, birthDate: selectedEmpForDetails.birthDate || '', overtimeBalance: getEmployeeStats(selectedEmpForDetails.id).overtimeAccount, weeklyHours: selectedEmpForDetails.weeklyHours || 40, primaryRole: selectedEmpForDetails.primaryRole || 'Service', accessLevel: selectedEmpForDetails.accessLevel || 'user' }); setShowEditEmpModal(true); }} className="bg-gray-100 text-gray-700 px-5 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2"><UserCog size={14} /> Profil</button>
+                                                    <button onClick={() => { setEditEmpData({ id: selectedEmpForDetails.id, name: selectedEmpForDetails.name, pin: selectedEmpForDetails.pin, birthDate: selectedEmpForDetails.birthDate || '', overtimeBalance: getEmployeeStats(selectedEmpForDetails.id).overtimeAccount, weeklyHours: selectedEmpForDetails.weeklyHours || 40, roles: selectedEmpForDetails.roles || (selectedEmpForDetails.primaryRole ? [selectedEmpForDetails.primaryRole] : ['Service']), accessLevel: selectedEmpForDetails.accessLevel || 'user' }); setShowEditEmpModal(true); }} className="bg-gray-100 text-gray-700 px-5 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2"><UserCog size={14} /> Profil</button>
                                                     <button onClick={() => initiateDeleteEmployee(selectedEmpForDetails.id)} className="bg-red-50 text-red-600 px-3 py-2 rounded-xl hover:bg-red-100 transition"><Trash2 size={20} /></button>
                                                 </div>
                                             </div>
@@ -1159,8 +1103,7 @@
                                                            <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase border-b border-r border-gray-200 w-[14%]">Mitarbeiter</th>
                                                            {daysOfWeek.map((d, i) => (
                                                               <th key={i} className={`px-2 py-4 text-center border-b border-r border-gray-200 w-[10%] ${i===6 ? 'bg-orange-50/30' : ''}`}>
-                                                                 <div className="text-[10px] font-black text-gray-400 uppercase">{['Mo','Di','Mi','Do','Fr','Sa','So'][d.getDay()]}</div>
-                                                                 <div className="text-sm font-bold text-gray-800">{d.getDate()}.</div>
+                                                                 <div className="text-[11px] font-black text-gray-800 uppercase">{formatDayDate(d)}</div>
                                                               </th>
                                                            ))}
                                                            <th className="px-2 py-4 text-center text-[10px] font-black text-gray-400 uppercase border-b border-gray-200 bg-gray-50 w-[8%]">Std. Woche</th>
@@ -1180,23 +1123,24 @@
                                                                     <div className="text-[10px] text-gray-400 uppercase tracking-widest">Soll: {targetW}h / Woche</div>
                                                                  </td>
                                                                  {shiftDatesStr.map((dateStr, idx) => {
-                                                                    const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr);
+                                                                    const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr && (s.role === group.role || (!s.role && group.role === 'Service')));
                                                                     const isAvail = availabilities.some(a => a.employeeId === emp.id && a.date === dateStr);
                                                                     
                                                                     return (
                                                                        <td key={dateStr} className={`border-r border-gray-100 p-2 align-middle ${idx===6 ? 'bg-orange-50/10' : ''}`}>
                                                                           {shift ? (
                                                                              <div 
-                                                                                onClick={() => { setShiftData({ id: shift.id, employeeId: emp.id, date: dateStr, startTime: shift.startTime, endTime: shift.endTime, role: shift.role || emp.primaryRole || 'Service' }); setShowShiftModal(true); }}
-                                                                                className="bg-green-50 border border-green-200 rounded-xl p-2 cursor-pointer hover:bg-green-100 transition relative group/shift flex flex-col items-center justify-center min-h-[64px]"
+                                                                                onClick={() => { setShiftData({ id: shift.id, employeeId: emp.id, date: dateStr, startTime: shift.startTime, endTime: shift.endTime, role: shift.role || group.role }); setShowShiftModal(true); }}
+                                                                                className="rounded-xl p-2 cursor-pointer transition relative group/shift flex flex-col items-center justify-center min-h-[64px]"
+                                                                                style={{ backgroundColor: (shift.color || '#f97316') + '1a', border: '1px solid ' + (shift.color || '#f97316') }}
                                                                              >
-                                                                                <div className="text-xs font-bold text-green-800 text-center">{shift.startTime} - {shift.endTime}</div>
-                                                                                <div className="text-[9px] text-green-600 text-center font-black mt-1">{shift.calculatedHours} h</div>
+                                                                                <div className="text-xs font-bold text-center" style={{ color: shift.color || '#ea580c' }}>{shift.startTime} - {shift.endTime}</div>
+                                                                                <div className="text-[9px] text-center font-black mt-1" style={{ color: shift.color || '#ea580c' }}>{shift.calculatedHours} h</div>
                                                                              </div>
                                                                           ) : (
                                                                              isAvail ? (
                                                                                  <div 
-                                                                                    onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, role: emp.primaryRole || 'Service' }); setShowShiftModal(true); }}
+                                                                                    onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, role: group.role }); setShowShiftModal(true); }}
                                                                                     className="h-full min-h-[64px] rounded-xl border-2 border-green-300 bg-green-50 flex flex-col items-center justify-center cursor-pointer hover:bg-green-100 transition relative group/empty"
                                                                                  >
                                                                                     <span className="text-[8px] font-black uppercase text-green-600 mb-1">Verfügbar</span>
@@ -1204,7 +1148,7 @@
                                                                                  </div>
                                                                              ) : (
                                                                                  <div 
-                                                                                    onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, role: emp.primaryRole || 'Service' }); setShowShiftModal(true); }}
+                                                                                    onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, role: group.role }); setShowShiftModal(true); }}
                                                                                     className="h-full min-h-[64px] rounded-xl border border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition opacity-0 group-hover:opacity-100"
                                                                                  >
                                                                                     <Plus size={16} className="text-gray-400" />
@@ -1248,9 +1192,23 @@
                                     
                                     <form onSubmit={handleAddTemplate} className="space-y-3 mb-8 bg-gray-50 p-4 rounded-2xl border border-gray-100">
                                         <input type="text" placeholder="Name (z.B. Frühschicht)" required value={newTemplate.name} onChange={e=>setNewTemplate({...newTemplate, name:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
-                                        <div className="grid grid-cols-2 gap-2">
+                                        <div className="grid grid-cols-2 gap-2 mb-3">
                                             <input type="time" required value={newTemplate.startTime} onChange={e=>setNewTemplate({...newTemplate, startTime:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
                                             <input type="time" required value={newTemplate.endTime} onChange={e=>setNewTemplate({...newTemplate, endTime:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
+                                        </div>
+                                        <div className="mb-4">
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Farbe wählen</label>
+                                            <div className="flex flex-wrap gap-2">
+                                                {SHIFT_COLORS.map(c => (
+                                                    <button 
+                                                        type="button" 
+                                                        key={c} 
+                                                        onClick={() => setNewTemplate({...newTemplate, color: c})} 
+                                                        className={`w-8 h-8 rounded-full border-2 transition-transform ${newTemplate.color === c ? 'border-gray-900 scale-110' : 'border-transparent'}`} 
+                                                        style={{ backgroundColor: c }}
+                                                    />
+                                                ))}
+                                            </div>
                                         </div>
                                         <button type="submit" className="w-full bg-orange-600 text-white py-3 rounded-xl font-bold text-sm shadow-md hover:bg-orange-700">Vorlage hinzufügen</button>
                                     </form>
@@ -1260,9 +1218,12 @@
                                         {shiftTemplates.length === 0 && <p className="text-sm text-gray-400 italic">Noch keine Vorlagen erstellt.</p>}
                                         {shiftTemplates.map(t => (
                                             <div key={t.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
-                                                <div>
-                                                    <p className="font-bold text-sm text-gray-900">{t.name}</p>
-                                                    <p className="text-[10px] font-bold text-gray-500 uppercase">{t.startTime} - {t.endTime}</p>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: t.color || '#f97316' }}></div>
+                                                    <div>
+                                                        <p className="font-bold text-sm text-gray-900">{t.name}</p>
+                                                        <p className="text-[10px] font-bold text-gray-500 uppercase">{t.startTime} - {t.endTime}</p>
+                                                    </div>
                                                 </div>
                                                 <button onClick={() => handleDeleteTemplate(t.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 size={16}/></button>
                                             </div>
@@ -1293,10 +1254,13 @@
                                                     type="button" 
                                                     key={t.id} 
                                                     onClick={() => saveShiftFromTemplate(t)} 
-                                                    className="bg-gray-50 border border-gray-200 p-4 rounded-xl hover:bg-orange-50 hover:border-orange-200 transition text-left shadow-sm flex justify-between items-center"
+                                                    className="bg-gray-50 border border-gray-200 p-4 rounded-xl hover:bg-gray-100 transition text-left shadow-sm flex items-center gap-3"
                                                  >
-                                                     <div className="font-bold text-sm text-gray-800">{t.name}</div>
-                                                     <div className="text-[12px] font-black text-orange-600">{t.startTime} - {t.endTime}</div>
+                                                     <div className="w-4 h-4 rounded-full flex-none" style={{ backgroundColor: t.color || '#f97316' }}></div>
+                                                     <div className="flex-1">
+                                                         <div className="font-bold text-sm text-gray-800">{t.name}</div>
+                                                     </div>
+                                                     <div className="text-[12px] font-black" style={{ color: t.color || '#ea580c' }}>{t.startTime} - {t.endTime}</div>
                                                  </button>
                                              ))}
                                          </div>
@@ -1376,18 +1340,29 @@
                                         <input value={editEmpData.pin} onChange={e=>setEditEmpData({...editEmpData, pin:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="PIN" />
                                         
                                         <div className="grid grid-cols-2 gap-4">
-                                            <div className="relative">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Haupt-Station</label>
-                                                <select required value={editEmpData.primaryRole} onChange={(e) => setEditEmpData({...editEmpData, primaryRole: e.target.value})} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold">
-                                                    <option value="Service">Service</option>
-                                                    <option value="Bar">Bar</option>
-                                                    <option value="Küche">Küche</option>
-                                                    <option value="Runner">Runner</option>
-                                                    <option value="Garderobe">Garderobe</option>
-                                                    <option value="Event">Event</option>
-                                                </select>
+                                            <div className="col-span-2 relative">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Einsatzbereiche (Mehrere möglich)</label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {AVAILABLE_ROLES.map(role => (
+                                                        <button
+                                                            type="button"
+                                                            key={role}
+                                                            onClick={() => {
+                                                                const currentRoles = editEmpData.roles || [];
+                                                                if (currentRoles.includes(role)) {
+                                                                    if (currentRoles.length > 1) setEditEmpData({...editEmpData, roles: currentRoles.filter(r => r !== role)});
+                                                                } else {
+                                                                    setEditEmpData({...editEmpData, roles: [...currentRoles, role]});
+                                                                }
+                                                            }}
+                                                            className={`px-3 py-2 rounded-xl text-xs font-bold border transition ${(editEmpData.roles || []).includes(role) ? 'bg-orange-600 text-white border-orange-600 shadow-md' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
+                                                        >
+                                                            {role}
+                                                        </button>
+                                                    ))}
+                                                </div>
                                             </div>
-                                            <div className="relative">
+                                            <div className="relative col-span-2">
                                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Zugriffsrechte</label>
                                                 <select required value={editEmpData.accessLevel} onChange={(e) => setEditEmpData({...editEmpData, accessLevel: e.target.value})} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold">
                                                     <option value="user">Mitarbeiter</option>
@@ -1476,18 +1451,28 @@
                                         <input type="text" placeholder="PIN (4 Zahlen)" required maxLength={4} value={newEmpPin} onChange={(e) => setNewEmpPin(e.target.value.replace(/\D/g, ''))} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-mono text-2xl text-center" />
                                         
                                         <div className="grid grid-cols-2 gap-4">
-                                            <div className="relative">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Haupt-Station</label>
-                                                <select required value={newEmpRole} onChange={(e) => setNewEmpRole(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold">
-                                                    <option value="Service">Service</option>
-                                                    <option value="Bar">Bar</option>
-                                                    <option value="Küche">Küche</option>
-                                                    <option value="Runner">Runner</option>
-                                                    <option value="Garderobe">Garderobe</option>
-                                                    <option value="Event">Event</option>
-                                                </select>
+                                            <div className="col-span-2 relative">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Einsatzbereiche (Mehrere möglich)</label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {AVAILABLE_ROLES.map(role => (
+                                                        <button
+                                                            type="button"
+                                                            key={role}
+                                                            onClick={() => {
+                                                                if (newEmpRoles.includes(role)) {
+                                                                    if (newEmpRoles.length > 1) setNewEmpRoles(newEmpRoles.filter(r => r !== role));
+                                                                } else {
+                                                                    setNewEmpRoles([...newEmpRoles, role]);
+                                                                }
+                                                            }}
+                                                            className={`px-3 py-2 rounded-xl text-xs font-bold border transition ${newEmpRoles.includes(role) ? 'bg-orange-600 text-white border-orange-600 shadow-md' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
+                                                        >
+                                                            {role}
+                                                        </button>
+                                                    ))}
+                                                </div>
                                             </div>
-                                            <div className="relative">
+                                            <div className="relative col-span-2">
                                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Zugriffsrechte</label>
                                                 <select required value={newEmpAccess} onChange={(e) => setNewEmpAccess(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold">
                                                     <option value="user">Mitarbeiter</option>
