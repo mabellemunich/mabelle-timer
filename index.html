@@ -1265,6 +1265,8 @@
               return isForMe || isForAllWithMyRole;
           });
 
+          const myUpcomingShifts = shifts.filter(s => s.employeeId === activeEmployee?.id && parseDateString(s.date) >= new Date(new Date().setHours(0,0,0,0))).sort((a,b) => parseDateString(a.date) - parseDateString(b.date));
+
           return (
             <div className={`font-sans text-gray-900 ${(!activeEmployee && view === 'terminal') ? 'min-h-[100dvh] flex flex-col bg-gray-50' : 'min-h-[100dvh] bg-gray-50 pb-20'}`}>
                 <nav className="bg-white border-b border-gray-200 p-4 flex justify-between items-center sticky top-0 z-10 shadow-sm flex-none">
