@@ -554,6 +554,20 @@
           const getActiveLog = (employeeId) => logs.find(l => l.employeeId === employeeId && !l.endTime);
           const getRelevantMessage = () => !activeEmployee ? null : bossMessages.find(msg => !msg.recipientId || msg.recipientId === 'all' || msg.recipientId === activeEmployee.id);
 
+          const handlePrevPeriod = () => {
+              const currentStart = parseDateString(period.start);
+              const prevStart = new Date(currentStart.getFullYear(), currentStart.getMonth() - 1, 16);
+              const prevEnd = new Date(currentStart.getFullYear(), currentStart.getMonth(), 15);
+              setPeriod({ start: toLocalIsoDate(prevStart), end: toLocalIsoDate(prevEnd) });
+          };
+
+          const handleNextPeriod = () => {
+              const currentStart = parseDateString(period.start);
+              const nextStart = new Date(currentStart.getFullYear(), currentStart.getMonth() + 1, 16);
+              const nextEnd = new Date(currentStart.getFullYear(), currentStart.getMonth() + 2, 15);
+              setPeriod({ start: toLocalIsoDate(nextStart), end: toLocalIsoDate(nextEnd) });
+          };
+
           // --- ACTIONS ---
           const handleChangeAdminPin = async (e) => {
             e.preventDefault();
@@ -1409,8 +1423,12 @@
 
                             <div className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex items-center gap-3"><Calendar size={18} className="text-orange-600" /><span className="font-black text-[10px] uppercase tracking-widest text-gray-500">Zeitraum wählen</span></div>
-                                <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-100">
-                                    <input type="date" value={period?.start || ''} onChange={(e) => setPeriod({...period, start: e.target.value})} className="bg-transparent font-bold text-xs p-1 outline-none" /><span className="text-gray-300">-</span><input type="date" value={period?.end || ''} onChange={(e) => setPeriod({...period, end: e.target.value})} className="bg-transparent font-bold text-xs p-1 outline-none" />
+                                <div className="flex items-center justify-between gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100 w-full sm:w-auto">
+                                    <button onClick={handlePrevPeriod} className="p-2 text-gray-500 hover:bg-white rounded-xl transition"><ChevronLeft size={16}/></button>
+                                    <div className="font-bold text-xs text-gray-800 text-center px-2 min-w-[160px]">
+                                        {formatDate(period?.start)} - {formatDate(period?.end)}
+                                    </div>
+                                    <button onClick={handleNextPeriod} className="p-2 text-gray-500 hover:bg-white rounded-xl transition"><ChevronRight size={16}/></button>
                                 </div>
                             </div>
 
@@ -1635,8 +1653,12 @@
                                     <div className="flex flex-col lg:flex-row justify-between items-center gap-6">
                                         <div className="flex items-center gap-4"><div className="bg-orange-100 p-3 rounded-2xl text-orange-600"><CalendarDays size={28} /></div><div><h2 className="text-2xl font-black tracking-tight">Zeitraum</h2><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Filter</p></div></div>
                                         <div className="flex flex-wrap items-center gap-4">
-                                            <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-2xl border border-gray-100">
-                                                <input type="date" value={period.start} onChange={(e) => setPeriod({...period, start: e.target.value})} className="bg-transparent font-bold text-sm outline-none" /><span className="text-gray-300">bis</span><input type="date" value={period.end} onChange={(e) => setPeriod({...period, end: e.target.value})} className="bg-transparent font-bold text-sm outline-none" />
+                                            <div className="flex items-center justify-between gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100 w-full sm:w-auto shrink-0">
+                                                <button onClick={handlePrevPeriod} className="p-3 text-gray-500 hover:bg-white rounded-xl transition"><ChevronLeft size={18}/></button>
+                                                <div className="font-bold text-sm text-gray-800 text-center px-4 min-w-[200px]">
+                                                    {formatDate(period.start)} - {formatDate(period.end)}
+                                                </div>
+                                                <button onClick={handleNextPeriod} className="p-3 text-gray-500 hover:bg-white rounded-xl transition"><ChevronRight size={18}/></button>
                                             </div>
                                             <button onClick={() => setShowBossMsgModal(true)} className="bg-orange-50 text-orange-600 p-4 rounded-2xl border border-orange-100 hover:bg-orange-100 transition flex items-center gap-2 font-bold text-xs uppercase"><Megaphone size={16}/></button>
                                             <button onClick={() => setShowManualLog(true)} className="bg-gray-100 text-gray-800 p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-gray-200 transition"><PlusCircle size={16}/> EINTRAG</button>
@@ -1680,7 +1702,16 @@
                                         </div>
                                         <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-200">
                                             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
-                                                <div><h2 className="text-3xl font-black tracking-tight">{selectedEmpForDetails.name}</h2><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{getActiveLog(selectedEmpForDetails.id) ? '● IM DIENST' : '● ABWESEND'}</p></div>
+                                                <div>
+                                                    <h2 className="text-3xl font-black tracking-tight">{selectedEmpForDetails.name}</h2>
+                                                    <div className="flex items-center gap-3 mt-1">
+                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{getActiveLog(selectedEmpForDetails.id) ? '● IM DIENST' : '● ABWESEND'}</p>
+                                                        <div className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-gray-600 border border-gray-200">
+                                                            <KeyRound size={10} />
+                                                            <span className="text-[10px] font-mono font-black uppercase tracking-widest">PIN: {selectedEmpForDetails.pin}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <div className="flex flex-col items-end gap-2 w-full md:w-auto">
                                                     <div className="w-full flex justify-end mb-2">
                                                         {getActiveLog(selectedEmpForDetails.id) ? (
@@ -2156,8 +2187,8 @@
                             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
                                 <div className="flex justify-between mb-6"><h2 className="font-black text-xl">Profil</h2><X onClick={()=>setShowEditEmpModal(false)} className="cursor-pointer text-gray-400 hover:text-gray-800"/></div>
                                 <form onSubmit={handleEditEmployee} className="space-y-4">
-                                    <input value={editEmpData.name} onChange={e=>setEditEmpData({...editEmpData, name:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="Name" />
-                                    <input value={editEmpData.pin} onChange={e=>setEditEmpData({...editEmpData, pin:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="PIN" />
+                                    <div><label className="text-xs font-bold text-gray-400 ml-1">Name</label><input value={editEmpData.name} onChange={e=>setEditEmpData({...editEmpData, name:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold mt-1" placeholder="Name" /></div>
+                                    <div><label className="text-xs font-bold text-gray-400 ml-1">PIN (Zum Login)</label><input value={editEmpData.pin} onChange={e=>setEditEmpData({...editEmpData, pin:e.target.value.replace(/\D/g, '')})} maxLength={4} className="w-full p-4 border-2 rounded-2xl font-mono text-xl tracking-widest font-bold mt-1" placeholder="PIN" /></div>
                                     
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="col-span-2 relative">
