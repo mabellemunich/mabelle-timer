@@ -97,6 +97,17 @@ const SHIFT_COLORS = ['#f97316', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#e
 
 // --- HELPERS ---
 
+const parseDateString = (dateStr) => {
+    if (!dateStr) return new Date();
+    if (typeof dateStr.toMillis === 'function') return new Date(dateStr.toMillis());
+    if (typeof dateStr === 'string' && dateStr.includes('-') && dateStr.length <= 10) {
+        const [y, m, d] = dateStr.split('-');
+        return new Date(y, m - 1, d);
+    }
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? new Date() : d;
+};
+
 const safeDate = (val) => {
   if (!val) return new Date();
   if (val && typeof val.toMillis === 'function') {
@@ -120,7 +131,7 @@ const toLocalIsoDate = (d) => {
 const formatDate = (dateVal) => {
     try {
         if (!dateVal) return '';
-        const d = safeDate(dateVal);
+        const d = parseDateString(dateVal);
         if (isNaN(d.getTime())) return '';
         const day = String(d.getDate()).padStart(2, '0');
         const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -131,9 +142,11 @@ const formatDate = (dateVal) => {
     }
 };
 
-const formatDayDate = (d) => {
+const formatDayDate = (dateVal) => {
     try {
-        if (!d || isNaN(d.getTime())) return '';
+        if (!dateVal) return '';
+        const d = parseDateString(dateVal);
+        if (isNaN(d.getTime())) return '';
         const days = ['So.', 'Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.'];
         const dayStr = String(d.getDate()).padStart(2, '0');
         const monthStr = String(d.getMonth() + 1).padStart(2, '0');
@@ -307,7 +320,7 @@ export default function App() {
   const [editingLog, setEditingLog] = useState(null);
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [showShiftTemplateModal, setShowShiftTemplateModal] = useState(false);
-  const [showSwapModal, setShowSwapModal] = useState(null); // stores the shift to swap
+  const [showSwapModal, setShowSwapModal] = useState(null); 
   
   // Data
   const [period, setPeriod] = useState(getDefaultPeriod());
@@ -318,7 +331,7 @@ export default function App() {
   const [logs, setLogs] = useState([]);
   const [shifts, setShifts] = useState([]); 
   const [shiftTemplates, setShiftTemplates] = useState([]); 
-  const [shiftSwaps, setShiftSwaps] = useState([]); // Tauschanfragen
+  const [shiftSwaps, setShiftSwaps] = useState([]); 
   const [availabilities, setAvailabilities] = useState([]);
   const [settlements, setSettlements] = useState([]);
   const [bossMessages, setBossMessages] = useState([]); 
@@ -489,8 +502,8 @@ export default function App() {
 
   const getEmployeeStats = (employeeId, filterPeriod = period) => {
     if (!filterPeriod || !filterPeriod.start || !filterPeriod.end) return { workedHours: '0.00', openHours: '0.00', overtimeAccount: '0.00', totalAvailable: '0.00', logs: [] };
-    const startLimit = new Date(filterPeriod.start).getTime();
-    const endLimit = new Date(filterPeriod.end);
+    const startLimit = parseDateString(filterPeriod.start).getTime();
+    const endLimit = parseDateString(filterPeriod.end);
     endLimit.setHours(23, 59, 59, 999);
 
     const filteredLogs = logs
@@ -533,13 +546,13 @@ export default function App() {
 
   const getPlannedHoursForPeriod = (employeeId, startStr, endStr) => {
       if (!startStr || !endStr) return '0.00';
-      const startLimit = new Date(startStr).getTime();
-      const endLimit = new Date(endStr);
+      const startLimit = parseDateString(startStr).getTime();
+      const endLimit = parseDateString(endStr);
       endLimit.setHours(23, 59, 59, 999);
       
       const relevantShifts = shifts.filter(s => {
           if (s.employeeId !== employeeId) return false;
-          const d = new Date(s.date).getTime();
+          const d = parseDateString(s.date).getTime();
           return d >= startLimit && d <= endLimit.getTime();
       });
       
@@ -710,7 +723,7 @@ export default function App() {
               toEmpId: swapTargetEmp,
               shiftId: showSwapModal.id,
               shiftDate: showSwapModal.date,
-              shiftRole: showSwapModal.role,
+              shiftRole: showSwapModal.role || 'Service',
               shiftStart: showSwapModal.startTime,
               shiftEnd: showSwapModal.endTime,
               status: 'pending',
@@ -797,7 +810,7 @@ export default function App() {
   };
 
   const handleSaveEdit = async (e) => { e.preventDefault(); if (!editingLog) return; try { const start = new Date(`${editingLog.date}T${editingLog.startTimeStr}`); let end = new Date(`${editingLog.date}T${editingLog.endTimeStr}`); if (end < start) end.setDate(end.getDate() + 1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', editingLog.id), { startTime: Timestamp.fromDate(start), endTime: Timestamp.fromDate(end), date: editingLog.date, calculatedHours: calculateHours(start, end), note: editingLog.note || '' }); setEditingLog(null); showStatus("Gespeichert", "success"); } catch (err) { showStatus("Fehler", "error"); } };
-  const handleSaveSettlement = async (e) => { e.preventDefault(); if (!selectedEmpForDetails) return; const billed = parseFloat(settleData.billedHours); const carryOver = parseFloat(settleData.carryOver); try { const batch = writeBatch(db); const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'employees', selectedEmpForDetails.id); batch.update(empRef, { overtimeBalance: carryOver }); const startLimit = new Date(period.start).getTime(); const endLimit = new Date(period.end).setHours(23, 59, 59, 999); const logsToSettle = logs.filter(l => { if (l.employeeId !== selectedEmpForDetails.id || l.isSettled || !l.endTime) return false; const d = safeDate(l.startTime).getTime(); return d >= startLimit && d <= endLimit; }); logsToSettle.forEach(log => { const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', log.id); batch.update(logRef, { isSettled: true }); }); const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements')); batch.set(settRef, { employeeId: selectedEmpForDetails.id, date: toLocalIsoDate(new Date()), periodStart: period.start, periodEnd: period.end, paidHours: billed, newBalance: carryOver, type: 'settlement' }); await batch.commit(); setShowSettleModal(false); showStatus("Abrechnung erfolgreich!", "success"); } catch(err) { showStatus("Fehler", "error"); } };
+  const handleSaveSettlement = async (e) => { e.preventDefault(); if (!selectedEmpForDetails) return; const billed = parseFloat(settleData.billedHours); const carryOver = parseFloat(settleData.carryOver); try { const batch = writeBatch(db); const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'employees', selectedEmpForDetails.id); batch.update(empRef, { overtimeBalance: carryOver }); const startLimit = parseDateString(period.start).getTime(); const endLimit = parseDateString(period.end).setHours(23, 59, 59, 999); const logsToSettle = logs.filter(l => { if (l.employeeId !== selectedEmpForDetails.id || l.isSettled || !l.endTime) return false; const d = safeDate(l.startTime).getTime(); return d >= startLimit && d <= endLimit; }); logsToSettle.forEach(log => { const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', log.id); batch.update(logRef, { isSettled: true }); }); const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements')); batch.set(settRef, { employeeId: selectedEmpForDetails.id, date: toLocalIsoDate(new Date()), periodStart: period.start, periodEnd: period.end, paidHours: billed, newBalance: carryOver, type: 'settlement' }); await batch.commit(); setShowSettleModal(false); showStatus("Abrechnung erfolgreich!", "success"); } catch(err) { showStatus("Fehler", "error"); } };
   const handleManualLogSubmit = async (e) => { e.preventDefault(); const emp = employees.find(e => e.id === manualLogData.employeeId); const s = new Date(`${manualLogData.date}T${manualLogData.startTime}`); let end = new Date(`${manualLogData.date}T${manualLogData.endTime}`); if (end < s) end.setDate(end.getDate() + 1); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'timelogs'), { employeeId: emp.id, employeeName: emp.name, startTime: Timestamp.fromDate(s), endTime: Timestamp.fromDate(end), date: manualLogData.date, calculatedHours: calculateHours(s, end), note: 'Manuell', isSettled: false }); setShowManualLog(false); showStatus("Gebucht", "success"); };
   
   const handleManualOvertimeSubmit = async (e) => {
@@ -882,7 +895,7 @@ export default function App() {
       prevEnd.setDate(prevEnd.getDate() + 6);
       
       const shiftsToCopy = shifts.filter(s => {
-          const d = new Date(s.date);
+          const d = parseDateString(s.date);
           return d >= prevStart && d <= prevEnd;
       });
       
@@ -895,11 +908,11 @@ export default function App() {
       try {
           const batch = writeBatch(db);
           shiftsToCopy.forEach(s => {
-              const oldDate = new Date(s.date);
+              const oldDate = parseDateString(s.date);
               const newDate = new Date(oldDate);
               newDate.setDate(newDate.getDate() + 7);
               
-              // Verhindern, dass Schichten doppelt kopiert werden, falls schon welche existieren
+              // Verhindern, dass Schichten doppelt kopiert werden
               const exists = shifts.find(exist => exist.employeeId === s.employeeId && exist.date === toLocalIsoDate(newDate));
               if (!exists) {
                   const newShiftRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'shifts'));
@@ -969,6 +982,15 @@ export default function App() {
       if (!shiftData.id) return;
       try {
           await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shiftData.id));
+          
+          // Cleanup orphaned swaps
+          const orphanedSwaps = shiftSwaps.filter(swap => swap.shiftId === shiftData.id);
+          if (orphanedSwaps.length > 0) {
+              const batch = writeBatch(db);
+              orphanedSwaps.forEach(swap => batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'shift_swaps', swap.id)));
+              await batch.commit();
+          }
+          
           setShowShiftModal(false); showStatus("Schicht gelöscht", "success");
       } catch(err) { showStatus("Fehler", "error"); }
   };
@@ -1135,13 +1157,14 @@ export default function App() {
 
   // --- CSV EXPORT (Punkt 6) ---
   const handleExportCSV = () => {
-      const startLimit = new Date(period.start).getTime();
-      const endLimit = new Date(period.end).setHours(23, 59, 59, 999);
+      const startLimit = parseDateString(period.start).getTime();
+      const endLimit = parseDateString(period.end);
+      endLimit.setHours(23, 59, 59, 999);
       
       let csv = "Mitarbeiter;Datum;Start;Ende;Brutto (Std);Pause (Min);Netto (Std);Notiz\n";
       
       employees.forEach(emp => {
-          const empLogs = logs.filter(l => l.employeeId === emp.id && safeDate(l.startTime).getTime() >= startLimit && safeDate(l.startTime).getTime() <= endLimit);
+          const empLogs = logs.filter(l => l.employeeId === emp.id && safeDate(l.startTime).getTime() >= startLimit && safeDate(l.startTime).getTime() <= endLimit.getTime());
           empLogs.forEach(log => {
               const start = safeDate(log.startTime);
               const end = log.endTime ? safeDate(log.endTime) : null;
@@ -1164,7 +1187,7 @@ export default function App() {
           });
       });
       
-      const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' }); // BOM für saubere Excel-Formatierung
+      const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' }); 
       const link = document.createElement("a");
       const url = URL.createObjectURL(blob);
       link.setAttribute("href", url);
@@ -1177,9 +1200,9 @@ export default function App() {
 
   if (loading && dbStatus === 'connecting') return <div className="h-screen flex items-center justify-center text-orange-600 font-bold bg-white"><RotateCw className="animate-spin mb-4" size={32} /> LOADING...</div>;
 
-  // Schichtentausch Variablen für Mitarbeiter Dashboard
+  const currentMsg = getRelevantMessage();
   const myPendingSwaps = shiftSwaps.filter(s => s.toEmpId === activeEmployee?.id && s.status === 'pending');
-  const myUpcomingShifts = shifts.filter(s => s.employeeId === activeEmployee?.id && new Date(s.date) >= new Date(new Date().setHours(0,0,0,0))).sort((a,b) => new Date(a.date) - new Date(b.date));
+  const myUpcomingShifts = shifts.filter(s => s.employeeId === activeEmployee?.id && parseDateString(s.date) >= new Date(new Date().setHours(0,0,0,0))).sort((a,b) => parseDateString(a.date) - parseDateString(b.date));
 
   return (
     <div className={`font-sans text-gray-900 ${(!activeEmployee && view === 'terminal') ? 'min-h-[100dvh] flex flex-col bg-gray-50' : 'min-h-[100dvh] bg-gray-50 pb-20'}`}>
@@ -1245,7 +1268,7 @@ export default function App() {
                                  <div key={swap.id} className="bg-white p-4 rounded-xl border border-blue-100 flex flex-col sm:flex-row items-start sm:items-center justify-between shadow-sm gap-4">
                                     <div>
                                        <p className="font-bold text-gray-900"><span className="text-blue-600">{fromEmp?.name}</span> bietet dir eine Schicht an:</p>
-                                       <p className="text-sm text-gray-600 font-medium">{formatDate(swap.shiftDate)} &bull; {swap.shiftStart} - {swap.shiftEnd} Uhr ({swap.shiftRole})</p>
+                                       <p className="text-sm text-gray-600 font-medium">{formatDayDate(parseDateString(swap.shiftDate))} &bull; {swap.shiftStart} - {swap.shiftEnd} Uhr ({swap.shiftRole})</p>
                                     </div>
                                     <div className="flex gap-2 w-full sm:w-auto">
                                        <button onClick={() => handleDeclineSwap(swap.id)} className="flex-1 sm:flex-none px-4 py-3 bg-red-50 text-red-600 rounded-xl font-bold text-xs hover:bg-red-100 transition">Ablehnen</button>
@@ -1328,7 +1351,7 @@ export default function App() {
                                    return (
                                        <div key={s.id} className="p-4 rounded-2xl border border-gray-100 bg-gray-50 flex justify-between items-center group hover:border-orange-200 transition">
                                            <div>
-                                              <div className="font-black text-gray-800">{formatDate(s.date)}</div>
+                                              <div className="font-black text-gray-800">{formatDayDate(s.date).split(' - ')[1]}</div>
                                               <div className="text-sm font-bold text-orange-600">{s.startTime} - {s.endTime} Uhr</div>
                                               <div className="text-[10px] uppercase font-bold text-gray-500 mt-1">{s.role}</div>
                                            </div>
@@ -1709,7 +1732,7 @@ export default function App() {
                           <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Wem möchtest du die Schicht anbieten?</label>
                           <select required value={swapTargetEmp} onChange={e=>setSwapTargetEmp(e.target.value)} className="w-full p-4 border-2 border-gray-100 rounded-2xl font-bold bg-gray-50 outline-none focus:border-orange-500 appearance-none">
                              <option value="">Kollege auswählen...</option>
-                             {employees.filter(e => e.id !== activeEmployee.id && (e.roles || []).includes(showSwapModal.role)).map(e => (
+                             {employees.filter(e => e.id !== activeEmployee.id && (e.roles || (e.primaryRole ? [e.primaryRole] : ['Service'])).includes(showSwapModal.role || 'Service')).map(e => (
                                  <option key={e.id} value={e.id}>{e.name}</option>
                              ))}
                           </select>
@@ -1781,7 +1804,7 @@ export default function App() {
                 </div>
             )}
 
-            {/* SCHICHT PLANEN MODAL */}
+            {/* SCHICHT PLANEN MODAL (VORLAGEN FÜR NEU, ZEITEN FÜR BEARBEITEN) */}
             {showShiftModal && shiftData && shiftData.employeeId && (
                <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
                   <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm">
