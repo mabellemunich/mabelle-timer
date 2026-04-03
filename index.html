@@ -24,10 +24,36 @@
     </script>
 
     <style>
-        body { overscroll-behavior-y: contain; -webkit-tap-highlight-color: transparent; }
+        body { overscroll-behavior-y: contain; -webkit-tap-highlight-color: transparent; transition: background-color 0.3s ease, color 0.3s ease; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .pin-dot { transition: all 0.2s ease; }
+        
+        /* Dark Mode Overrides */
+        body.dark-theme { background-color: #111827; color: #f9fafb; }
+        .dark-theme .bg-white { background-color: #1f2937 !important; }
+        .dark-theme .bg-gray-50 { background-color: #111827 !important; }
+        .dark-theme .bg-gray-100 { background-color: #374151 !important; color: #e5e7eb !important; }
+        .dark-theme .bg-gray-200 { background-color: #4b5563 !important; }
+        .dark-theme .hover\:bg-gray-50:hover { background-color: #1f2937 !important; }
+        .dark-theme .hover\:bg-gray-100:hover { background-color: #4b5563 !important; }
+        .dark-theme .hover\:bg-gray-200:hover { background-color: #6b7280 !important; }
+        .dark-theme .hover\:bg-white:hover { background-color: #374151 !important; }
+        .dark-theme .border-gray-50 { border-color: #1f2937 !important; }
+        .dark-theme .border-gray-100, .dark-theme .border-gray-200 { border-color: #374151 !important; }
+        .dark-theme .border-gray-300 { border-color: #4b5563 !important; }
+        .dark-theme .text-gray-900, .dark-theme .text-gray-800 { color: #f9fafb !important; }
+        .dark-theme .text-gray-700, .dark-theme .text-gray-600 { color: #d1d5db !important; }
+        .dark-theme .text-gray-500, .dark-theme .text-gray-400 { color: #9ca3af !important; }
+        .dark-theme .text-gray-300 { color: #6b7280 !important; }
+        .dark-theme input, .dark-theme select, .dark-theme textarea { background-color: #374151 !important; color: #f9fafb !important; border-color: #4b5563 !important; }
+        .dark-theme .shadow-sm, .dark-theme .shadow-xl, .dark-theme .shadow-2xl { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3) !important; }
+        .dark-theme .bg-orange-50 { background-color: rgba(234, 88, 12, 0.15) !important; border-color: rgba(234, 88, 12, 0.2) !important; }
+        .dark-theme .bg-blue-50 { background-color: rgba(59, 130, 246, 0.15) !important; border-color: rgba(59, 130, 246, 0.2) !important; }
+        .dark-theme .bg-green-50 { background-color: rgba(34, 197, 94, 0.15) !important; border-color: rgba(34, 197, 94, 0.2) !important; }
+        .dark-theme .bg-red-50 { background-color: rgba(239, 68, 68, 0.15) !important; border-color: rgba(239, 68, 68, 0.2) !important; }
+        .dark-theme .bg-yellow-50 { background-color: rgba(234, 179, 8, 0.15) !important; border-color: rgba(234, 179, 8, 0.2) !important; }
+        .dark-theme .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.15) !important; border-color: rgba(99, 102, 241, 0.2) !important; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans select-none">
@@ -49,7 +75,7 @@
             Cake, CloudSun, ThermometerSun, Eye, AlertTriangle, RotateCw, Settings, 
             KeyRound, PiggyBank, MapPin, Siren, Moon, ArrowRightLeft, Download, 
             CheckSquare, Copy, ListTodo, Layers, Shield, ChevronRight, ChevronLeft, 
-            Wand2, Plus, CalendarClock
+            Wand2, Plus, CalendarClock, Sun
         } from 'lucide-react';
 
         // --- FIREBASE KONFIGURATION ---
@@ -174,26 +200,6 @@
           return { start: toLocalIsoDate(start), end: toLocalIsoDate(end) };
         };
 
-        const getPeriodOptions = () => {
-          const options = [];
-          const today = new Date();
-          for (let i = -12; i <= 2; i++) {
-            const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
-            const year = d.getFullYear();
-            const month = d.getMonth();
-            const start = new Date(year, month, 16);
-            const end = new Date(year, month + 1, 15);
-            
-            const label = `${formatDate(start)} bis ${formatDate(end)}`;
-            options.push({
-              label: label,
-              value: JSON.stringify({ start: toLocalIsoDate(start), end: toLocalIsoDate(end) }),
-              startIso: toLocalIsoDate(start)
-            });
-          }
-          return options;
-        };
-
         const getMonday = (d) => {
             const date = new Date(d);
             if (isNaN(date.getTime())) return new Date();
@@ -273,7 +279,6 @@
         function App() {
           const [user, setUser] = useState(null);
           const [view, setView] = useState('terminal'); 
-          const [showAdminLogin, setShowAdminLogin] = useState(false);
           const [adminSubView, setAdminSubView] = useState('overview'); 
           const [activeEmployee, setActiveEmployee] = useState(null);
           const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
@@ -344,10 +349,20 @@
           const [manualOvertimeAmount, setManualOvertimeAmount] = useState('');
           const [manualOvertimeNote, setManualOvertimeNote] = useState('');
           const [swapTargetEmp, setSwapTargetEmp] = useState('all');
-          
-          // Dienstplan Eingabe
-          const [shiftData, setShiftData] = useState({ id: null, employeeId: '', date: '', role: 'Service' });
-          const [newTemplate, setNewTemplate] = useState({ id: null, name: '', startTime: '08:00', endTime: '16:00', color: '#f97316' });
+
+          // --- DARK MODE STATE ---
+          const [isDarkMode, setIsDarkMode] = useState(() => {
+              return localStorage.getItem('mabelle_dark_mode') === 'true';
+          });
+
+          useEffect(() => {
+              if (isDarkMode) {
+                  document.body.classList.add('dark-theme');
+              } else {
+                  document.body.classList.remove('dark-theme');
+              }
+              localStorage.setItem('mabelle_dark_mode', isDarkMode);
+          }, [isDarkMode]);
 
           const birthdayAlerts = useMemo(() => checkUpcomingBirthdays(employees), [employees]);
 
@@ -1111,7 +1126,7 @@
               setIsProcessing(false);
           };
 
-          const handleAddTemplate = async (e) => {
+          const handleSaveTemplate = async (e) => {
               e.preventDefault();
               try {
                   if (newTemplate.id) {
@@ -1177,6 +1192,7 @@
                   `;
               }).join('');
 
+              const scriptEnd = "</" + "script>";
               const htmlContent = `
                   <html>
                   <head>
@@ -1193,7 +1209,7 @@
                       <h1>Dienstplan: ${formatDayDate(daysOfWeek[0]).split(' - ')[1]} - ${formatDayDate(daysOfWeek[6]).split(' - ')[1]}</h1>
                       ${tablesHtml}
                       <div class="footer">Generiert von MABELLE TIMER am ${new Date().toLocaleString('de-DE')}</div>
-                      <script>window.onload = function() { window.print(); }<\/script>
+                      <script>window.onload = function() { window.print(); }${scriptEnd}
                   </body>
                   </html>
               `;
@@ -1279,6 +1295,9 @@
                         {weather && (<div className="flex items-center gap-2 bg-blue-50 px-3 py-1 rounded-xl text-blue-800 text-xs font-bold border border-blue-100"><ThermometerSun size={16} /><span>{weather.current}°C</span><span className="text-blue-300">|</span><span>Max: {weather.max}°C</span></div>)}
                     </div>
                     <div className="flex gap-2">
+                       <button onClick={() => setIsDarkMode(!isDarkMode)} className="px-3 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition" title="Dark Mode umschalten">
+                           {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+                       </button>
                        {view === 'admin' && <div className="flex gap-2">{hasAdminRights && <button onClick={() => setShowSettingsModal(true)} className="px-3 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200"><Settings size={18} /></button>}<button onClick={() => { setView('terminal'); setSelectedEmpForDetails(null); if(isGlobalAdmin) setIsGlobalAdmin(false); }} className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-black uppercase border border-red-100">Exit</button></div>}
                        {activeEmployee && view !== 'admin' && <button onClick={() => { setActiveEmployee(null); setView('terminal'); }} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl text-xs font-black uppercase">Abmelden</button>}
                     </div>
@@ -1522,7 +1541,8 @@
                                                               <td className="px-4 py-3 border-r border-gray-100">
                                                                   <div className={`font-bold text-sm truncate ${emp.id === activeEmployee.id ? 'text-orange-600' : 'text-gray-900'}`}>{emp.name} {emp.id === activeEmployee.id && '(Ich)'}</div>
                                                               </td>
-                                                              {shiftDatesStr.map((dateStr, idx) => {
+                                                              {empDaysOfWeek.map((d, idx) => {
+                                                                  const dateStr = toLocalIsoDate(d);
                                                                   const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr && (s.role === group.role || (!s.role && group.role === 'Service')));
                                                                   const pendingSwap = shift ? shiftSwaps.find(swap => swap.shiftId === shift.id && swap.status === 'pending') : null;
                                                                   
@@ -1911,7 +1931,36 @@
                         </div>
                     )}
 
-                    {/* TAUSCHANFRAGE SENDEN MODAL (Eigene Schicht in Pool geben) */}
+                    {/* TAUSCHANFRAGE SENDEN MODAL */}
+                    {showSwapModal && (
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[160] p-4">
+                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm">
+                               <div className="flex justify-between items-center mb-6">
+                                  <h2 className="text-xl font-black">Schicht abgeben</h2>
+                                  <button onClick={() => { setShowSwapModal(null); setSwapTargetEmp('all'); }} className="text-gray-400 hover:text-gray-900 transition"><X size={24}/></button>
+                               </div>
+                               
+                               <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 mb-6 text-center">
+                                  <p className="font-bold text-orange-800 text-lg mb-1">{formatDate(showSwapModal.date)}</p>
+                                  <p className="text-sm font-black text-orange-600 uppercase tracking-wider">{showSwapModal.startTime} - {showSwapModal.endTime} Uhr</p>
+                                  <p className="text-[10px] text-orange-500 uppercase mt-1">Bereich: {showSwapModal.role}</p>
+                               </div>
+                               
+                               <form onSubmit={handleCreateSwap} className="space-y-4">
+                                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Schicht anbieten an:</label>
+                                  <select required value={swapTargetEmp} onChange={e=>setSwapTargetEmp(e.target.value)} className="w-full p-4 border-2 border-gray-100 rounded-2xl font-bold bg-gray-50 outline-none focus:border-orange-500 appearance-none">
+                                     <option value="all">🚀 Offene Tauschbörse (Alle Kollegen)</option>
+                                     <optgroup label="Direkt an einen Kollegen anfragen:">
+                                         {employees.filter(e => e.id !== activeEmployee.id && (e.roles || (e.primaryRole ? [e.primaryRole] : ['Service'])).includes(showSwapModal.role || 'Service')).map(e => (
+                                             <option key={e.id} value={e.id}>{e.name}</option>
+                                         ))}
+                                     </optgroup>
+                                  </select>
+                                  <button type="submit" className="w-full bg-orange-600 text-white py-4 rounded-2xl font-bold mt-4 shadow-lg hover:bg-orange-700 transition">SCHICHT ANBIETEN</button>
+                               </form>
+                            </div>
+                        </div>
+                    )}
 
                     {/* SCHICHT VORLAGEN VERWALTEN MODAL */}
                     {showShiftTemplateModal && (
