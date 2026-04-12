@@ -70,7 +70,7 @@
         import { 
             Clock, Edit3, Calendar, Lock, X, UserPlus, Trash2, Play, Square, 
             ShieldAlert, PlusCircle, Users, Save, Timer, ArrowLeft, CalendarDays, 
-            FileText, Printer, Wallet, ChevronDown, CheckCircle2, Calculator, 
+            FileText, Printer, Wallet, ChevronDown, ChevronUp, CheckCircle2, Calculator, 
             UserCog, Power, MessageSquare, StickyNote, Megaphone, Send, User, 
             Cake, CloudSun, ThermometerSun, Eye, AlertTriangle, RotateCw, Settings, 
             KeyRound, PiggyBank, MapPin, Siren, Moon, ArrowRightLeft, Download, 
@@ -838,6 +838,28 @@
               } catch(e) {}
           };
 
+          const moveEmployee = async (empId, direction) => {
+              const group = groupedEmployees.find(g => g.emps.some(e => e.id === empId));
+              if (!group) return;
+              
+              const empsCopy = [...group.emps];
+              const idx = empsCopy.findIndex(e => e.id === empId);
+              
+              if (direction === 'up' && idx > 0) {
+                  [empsCopy[idx - 1], empsCopy[idx]] = [empsCopy[idx], empsCopy[idx - 1]];
+              } else if (direction === 'down' && idx < empsCopy.length - 1) {
+                  [empsCopy[idx + 1], empsCopy[idx]] = [empsCopy[idx], empsCopy[idx + 1]];
+              } else {
+                  return;
+              }
+              
+              const batch = writeBatch(db);
+              empsCopy.forEach((e, i) => {
+                  batch.update(doc(db, 'artifacts', appId, 'public', 'data', 'employees', e.id), { sortOrder: i });
+              });
+              await batch.commit();
+          };
+
           const initiateDeleteEmployee = (id) => { setShowDeleteConfirm({ id, type: 'EMPLOYEE' }); setConfirmPinInput(''); };
           const executeDeleteEmployee = async (e) => {
               e.preventDefault();
@@ -874,7 +896,8 @@
                       name: newEmpName, pin: newEmpPin, birthDate: newEmpBirthDate, overtimeBalance: 0, 
                       weeklyHours: parseFloat(newEmpWeeklyHours) || 0,
                       roles: newEmpRoles,
-                      accessLevel: newEmpAccess
+                      accessLevel: newEmpAccess,
+                      sortOrder: employees.length
                   }); 
                   setNewEmpName(''); setNewEmpPin(''); setNewEmpBirthDate(''); setNewEmpWeeklyHours('40'); setNewEmpRoles(['Service']); setNewEmpAccess('user'); setShowAddEmployee(false); 
                   showStatus("Mitarbeiter angelegt", "success"); 
@@ -895,7 +918,7 @@
           };
 
           const handleSaveEdit = async (e) => { e.preventDefault(); if (!editingLog) return; try { const start = new Date(`${editingLog.date}T${editingLog.startTimeStr}`); let end = new Date(`${editingLog.date}T${editingLog.endTimeStr}`); if (end < start) end.setDate(end.getDate() + 1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', editingLog.id), { startTime: Timestamp.fromDate(start), endTime: Timestamp.fromDate(end), date: editingLog.date, calculatedHours: calculateHours(start, end), note: editingLog.note || '' }); setEditingLog(null); showStatus("Gespeichert", "success"); } catch (err) { showStatus("Fehler", "error"); } };
-          const handleSaveSettlement = async (e) => { e.preventDefault(); if (!selectedEmpForDetails) return; const billed = parseFloat(settleData.billedHours); const carryOver = parseFloat(settleData.carryOver); try { const batch = writeBatch(db); const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'employees', selectedEmpForDetails.id); batch.update(empRef, { overtimeBalance: carryOver }); const startLimit = parseDateString(period.start).getTime(); const endLimit = parseDateString(period.end); endLimit.setHours(23, 59, 59, 999); const logsToSettle = logs.filter(l => { if (l.employeeId !== selectedEmpForDetails.id || l.isSettled || !l.endTime) return false; const d = safeDate(l.startTime).getTime(); return d >= startLimit && d <= endLimit.getTime(); }); logsToSettle.forEach(log => { const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', log.id); batch.update(logRef, { isSettled: true }); }); const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements')); batch.set(settRef, { employeeId: selectedEmpForDetails.id, date: toLocalIsoDate(new Date()), periodStart: period.start, periodEnd: period.end, paidHours: billed, newBalance: carryOver, type: 'settlement' }); await batch.commit(); setShowSettleModal(false); showStatus("Abrechnung erfolgreich!", "success"); } catch(err) { showStatus("Fehler", "error"); } };
+          const handleSaveSettlement = async (e) => { e.preventDefault(); if (!selectedEmpForDetails) return; const billed = parseFloat(settleData.billedHours); const carryOver = parseFloat(settleData.carryOver); try { const batch = writeBatch(db); const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'employees', selectedEmpForDetails.id); batch.update(empRef, { overtimeBalance: carryOver }); const startLimit = parseDateString(period.start).getTime(); const endLimit = parseDateString(period.end).setHours(23, 59, 59, 999); const logsToSettle = logs.filter(l => { if (l.employeeId !== selectedEmpForDetails.id || l.isSettled || !l.endTime) return false; const d = safeDate(l.startTime).getTime(); return d >= startLimit && d <= endLimit.getTime(); }); logsToSettle.forEach(log => { const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', log.id); batch.update(logRef, { isSettled: true }); }); const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements')); batch.set(settRef, { employeeId: selectedEmpForDetails.id, date: toLocalIsoDate(new Date()), periodStart: period.start, periodEnd: period.end, paidHours: billed, newBalance: carryOver, type: 'settlement' }); await batch.commit(); setShowSettleModal(false); showStatus("Abrechnung erfolgreich!", "success"); } catch(err) { showStatus("Fehler", "error"); } };
           const handleManualLogSubmit = async (e) => { e.preventDefault(); const emp = employees.find(e => e.id === manualLogData.employeeId); const s = new Date(`${manualLogData.date}T${manualLogData.startTime}`); let end = new Date(`${manualLogData.date}T${manualLogData.endTime}`); if (end < s) end.setDate(end.getDate() + 1); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'timelogs'), { employeeId: emp.id, employeeName: emp.name, startTime: Timestamp.fromDate(s), endTime: Timestamp.fromDate(end), date: manualLogData.date, calculatedHours: calculateHours(s, end), note: 'Manuell', isSettled: false }); setShowManualLog(false); showStatus("Gebucht", "success"); };
           
           const handleManualOvertimeSubmit = async (e) => {
@@ -956,12 +979,22 @@
                   emps: employees.filter(e => {
                       const empRoles = e.roles || (e.primaryRole ? [e.primaryRole] : ['Service']);
                       return empRoles.includes(role);
+                  }).sort((a, b) => {
+                      const orderA = a.sortOrder !== undefined ? a.sortOrder : 999;
+                      const orderB = b.sortOrder !== undefined ? b.sortOrder : 999;
+                      if (orderA === orderB) return a.name.localeCompare(b.name);
+                      return orderA - orderB;
                   })
               }));
               
               const otherEmps = employees.filter(e => {
                    const empRoles = e.roles || (e.primaryRole ? [e.primaryRole] : ['Service']);
                    return !empRoles.some(r => AVAILABLE_ROLES.includes(r));
+              }).sort((a, b) => {
+                  const orderA = a.sortOrder !== undefined ? a.sortOrder : 999;
+                  const orderB = b.sortOrder !== undefined ? b.sortOrder : 999;
+                  if (orderA === orderB) return a.name.localeCompare(b.name);
+                  return orderA - orderB;
               });
               if (otherEmps.length > 0) {
                   groups.push({ role: 'Andere', emps: otherEmps });
@@ -969,6 +1002,25 @@
 
               return groups.filter(g => g.emps.length > 0);
           }, [employees]);
+
+          // ABGELEITETE TEAM-PLAN GRUPPE (Für Mitarbeiteransicht)
+          const teamPlanGroups = useMemo(() => {
+              if (!activeEmployee) return [];
+              return groupedEmployees.map(group => {
+                  const activeEmps = group.emps.filter(emp => {
+                      const hasShift = shifts.some(s => s.employeeId === emp.id && empDaysOfWeek.map(d => toLocalIsoDate(d)).includes(s.date));
+                      return hasShift || emp.id === activeEmployee.id;
+                  });
+                  
+                  activeEmps.sort((a, b) => {
+                      if (a.id === activeEmployee.id) return -1;
+                      if (b.id === activeEmployee.id) return 1;
+                      return 0; // maintain original sort order
+                  });
+                  
+                  return { ...group, emps: activeEmps };
+              }).filter(g => g.emps.length > 0);
+          }, [groupedEmployees, activeEmployee, shifts, empDaysOfWeek]);
 
           // --- KOPIEREN VORWOCHE ---
           const handleCopyWeek = async () => {
@@ -1372,14 +1424,14 @@
 
                     {activeEmployee && view === 'terminal' && (
                         <div className="max-w-4xl mx-auto space-y-6">
-                            {/* TAUSCHANFRAGEN BANNER */}
-                            {availableSwaps.length > 0 && (
+                            {/* TAUSCHANFRAGEN BANNER (Punkt 3) */}
+                            {myPendingSwaps.length > 0 && (
                                <div className="bg-blue-50 border-2 border-blue-200 p-6 rounded-[2rem] shadow-sm mb-6 flex flex-col gap-4 animate-in slide-in-from-top-4">
                                   <div className="flex items-center gap-3 text-blue-700">
                                      <ArrowRightLeft size={24} />
                                      <h3 className="font-black text-lg">Schicht-Tauschbörse</h3>
                                   </div>
-                                  {availableSwaps.map(swap => {
+                                  {myPendingSwaps.map(swap => {
                                      const fromEmp = employees.find(e => e.id === swap.fromEmpId);
                                      const requester = employees.find(e => e.id === swap.requestedBy);
                                      let isMyShiftBeingRequested = swap.fromEmpId === activeEmployee?.id && swap.requestedBy !== activeEmployee?.id;
@@ -1398,11 +1450,11 @@
                                                {isMyShiftBeingRequested && swap.tradeShiftId ? (
                                                    <div className="mt-3 pl-3 border-l-4 border-orange-400 bg-orange-50 p-3 rounded-r-xl">
                                                         <p className="text-xs text-orange-800 font-bold uppercase tracking-widest mb-1">Angebotene Tausch-Schicht</p>
-                                                        <p className="text-sm text-orange-700 font-black">{formatDayDate(swap.tradeShiftDate)} &bull; {swap.tradeShiftStart} - {swap.tradeShiftEnd} Uhr ({swap.tradeShiftRole})</p>
+                                                        <p className="text-sm text-orange-700 font-black">{formatDayDate(parseDateString(swap.tradeShiftDate))} &bull; {swap.tradeShiftStart} - {swap.tradeShiftEnd} Uhr ({swap.tradeShiftRole})</p>
                                                         <p className="text-[10px] text-gray-500 mt-2 pt-2 border-t border-orange-200/50 leading-tight">Deine Schicht vom {formatDate(swap.shiftDate)} geht an {requester?.name}.</p>
                                                    </div>
                                                ) : (
-                                                   <p className="text-sm text-gray-600 font-medium mt-1">{formatDayDate(swap.shiftDate)} &bull; {swap.shiftStart} - {swap.shiftEnd} Uhr ({swap.shiftRole})</p>
+                                                   <p className="text-sm text-gray-600 font-medium mt-1">{formatDayDate(parseDateString(swap.shiftDate))} &bull; {swap.shiftStart} - {swap.shiftEnd} Uhr ({swap.shiftRole})</p>
                                                )}
                                             </div>
                                             <div className="flex gap-2 w-full sm:w-auto shrink-0 sm:items-center mt-2 sm:mt-0">
@@ -1488,7 +1540,7 @@
                                         <div className="flex items-center justify-between gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100 w-full sm:w-auto shrink-0">
                                             <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() - 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronLeft size={16}/></button>
                                             <div className="font-bold text-xs text-gray-800 text-center px-2">
-                                               {empDaysOfWeek.length > 0 ? `${formatDayDate(empDaysOfWeek[0])} - ${formatDayDate(empDaysOfWeek[6])}` : ''}
+                                               {empDaysOfWeek.length > 0 ? `${formatDayDate(empDaysOfWeek[0]).split(' ')[1]} - ${formatDayDate(empDaysOfWeek[6]).split(' ')[1]}` : ''}
                                             </div>
                                             <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() + 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronRight size={16}/></button>
                                         </div>
@@ -1572,7 +1624,7 @@
                                              </tr>
                                           </thead>
                                           <tbody className="divide-y divide-gray-100">
-                                              {groupedEmployees.map(group => (
+                                              {teamPlanGroups.map(group => (
                                                   <React.Fragment key={group.role}>
                                                       <tr><td colSpan="8" className="bg-gray-100 px-4 py-2 text-[10px] font-black text-gray-500 uppercase tracking-widest">{group.role}</td></tr>
                                                       {group.emps.map(emp => (
@@ -1727,6 +1779,10 @@
                                                     <h2 className="text-3xl font-black tracking-tight">{selectedEmpForDetails.name}</h2>
                                                     <div className="flex items-center gap-3 mt-1">
                                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{getActiveLog(selectedEmpForDetails.id) ? '● IM DIENST' : '● ABWESEND'}</p>
+                                                        <div className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-gray-600 border border-gray-200">
+                                                            <KeyRound size={10} />
+                                                            <span className="text-[10px] font-mono font-black uppercase tracking-widest">PIN: {selectedEmpForDetails.pin}</span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col items-end gap-2 w-full md:w-auto">
@@ -1859,8 +1915,16 @@
                                                        return (
                                                           <tr key={emp.id} className="hover:bg-gray-50/30 transition group">
                                                              <td className="px-4 py-4 border-r border-gray-100">
-                                                                <div className="font-bold text-gray-900 truncate">{emp.name}</div>
-                                                                <div className="text-[10px] text-gray-400 uppercase tracking-widest">Soll: {targetW}h / Woche</div>
+                                                                <div className="flex justify-between items-start">
+                                                                    <div className="overflow-hidden">
+                                                                        <div className="font-bold text-gray-900 truncate" title={emp.name}>{emp.name}</div>
+                                                                        <div className="text-[10px] text-gray-400 uppercase tracking-widest mt-1">Soll: {targetW}h / W.</div>
+                                                                    </div>
+                                                                    <div className="flex flex-col gap-0.5 ml-2">
+                                                                        <button onClick={() => moveEmployee(emp.id, 'up')} className="text-gray-300 hover:text-orange-500 transition-colors p-0.5 bg-gray-50 rounded hover:bg-orange-50" title="Nach oben verschieben"><ChevronUp size={14}/></button>
+                                                                        <button onClick={() => moveEmployee(emp.id, 'down')} className="text-gray-300 hover:text-orange-500 transition-colors p-0.5 bg-gray-50 rounded hover:bg-orange-50" title="Nach unten verschieben"><ChevronDown size={14}/></button>
+                                                                    </div>
+                                                                </div>
                                                              </td>
                                                              {shiftDatesStr.map((dateStr, idx) => {
                                                                 const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr && (s.role === group.role || (!s.role && group.role === 'Service')));
@@ -2251,118 +2315,48 @@
                         </div>
                     )}
 
-                    {/* OVERTIME HISTORY MODAL */}
-                    {showOvertimeHistoryModal && selectedEmpForDetails && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[130] p-4">
-                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto">
+                    {/* EINSTELLUNGEN MODAL (Zahnrad) */}
+                    {showSettingsModal && (
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[160] p-4">
+                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
                                 <div className="flex justify-between items-center mb-6">
-                                    <div className="flex items-center gap-2 text-orange-600"><History size={24} /><h2 className="text-xl font-black">Konto-Verlauf</h2></div>
-                                    <button onClick={() => setShowOvertimeHistoryModal(false)} className="text-gray-400 p-1"><X size={24}/></button>
+                                    <h2 className="text-xl font-black flex items-center gap-2"><Settings className="text-gray-900" /> Einstellungen</h2>
+                                    <button onClick={() => setShowSettingsModal(false)} className="text-gray-400 hover:text-gray-900 transition"><X size={24}/></button>
                                 </div>
                                 
-                                <div className="bg-gray-50 p-4 rounded-2xl mb-6">
-                                    <p className="text-xs font-bold text-gray-400 uppercase mb-2">Manuelle Korrektur</p>
-                                    <form onSubmit={handleManualOvertimeSubmit} className="flex flex-col gap-3">
-                                        <div className="flex gap-2">
-                                            <input type="number" step="0.01" placeholder="+/- Std" className="w-24 p-3 rounded-xl border-2 font-bold text-center" value={manualOvertimeAmount} onChange={e => setManualOvertimeAmount(e.target.value)} />
-                                            <input type="text" placeholder="Grund (z.B. Bonus)" className="flex-1 p-3 rounded-xl border-2 font-medium" value={manualOvertimeNote} onChange={e => setManualOvertimeNote(e.target.value)} />
-                                        </div>
-                                        <button className="bg-orange-600 text-white p-3 rounded-xl font-bold text-xs uppercase hover:bg-orange-700">Buchen</button>
+                                {/* Admin PIN ändern */}
+                                <div className="bg-gray-50 p-5 rounded-2xl mb-6 border border-gray-100">
+                                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Admin-PIN ändern</h3>
+                                    <form onSubmit={handleChangeAdminPin} className="flex gap-2">
+                                        <input 
+                                            type="text" 
+                                            placeholder="Neue PIN" 
+                                            value={newAdminPinInput} 
+                                            onChange={e => setNewAdminPinInput(e.target.value.replace(/\D/g, ''))}
+                                            className="flex-1 p-3 border-2 border-gray-200 rounded-xl font-mono text-center font-bold bg-white outline-none focus:border-orange-500"
+                                        />
+                                        <button type="submit" className="bg-gray-900 text-white px-4 py-3 rounded-xl font-bold text-xs uppercase hover:bg-black transition">Speichern</button>
                                     </form>
+                                    <p className="text-[9px] text-gray-400 mt-2">PIN muss mindestens 4 Zahlen enthalten. Standard: 311088.</p>
                                 </div>
 
-                                <div className="space-y-3">
-                                    {getSettlementHistory(selectedEmpForDetails.id).length === 0 ? <p className="text-center text-gray-400 text-xs italic">Keine Einträge vorhanden</p> : 
-                                        getSettlementHistory(selectedEmpForDetails.id).map((s, idx) => (
-                                            <div key={idx} className="border-b border-gray-100 pb-3 last:border-0">
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-xs font-bold text-gray-400">{formatDate(s.date)}</span>
-                                                    <span className={`text-sm font-black ${s.type === 'manual_adjustment' ? 'text-blue-600' : 'text-green-600'}`}>
-                                                        {s.type === 'manual_adjustment' ? (s.amount > 0 ? `+${s.amount}` : s.amount) : `-${s.paidHours}`} h
-                                                    </span>
-                                                </div>
-                                                <div className="text-xs text-gray-600 mt-1">
-                                                    {s.type === 'manual_adjustment' ? (
-                                                        <span>Manuell: {s.note || '-'}</span>
-                                                    ) : (
-                                                        <span>Abrechnung ({formatDate(s.periodStart)} - {formatDate(s.periodEnd)})</span>
-                                                    )}
-                                                </div>
-                                                <div className="text-[10px] text-gray-400 text-right mt-1">Saldo danach: {parseFloat(s.newBalance).toFixed(2)} h</div>
-                                            </div>
-                                        ))
-                                    }
+                                {/* System Reset */}
+                                <div className="bg-red-50 p-5 rounded-2xl border border-red-100">
+                                    <h3 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-2 flex items-center gap-1"><AlertTriangle size={12}/> Gefahrenzone</h3>
+                                    <p className="text-xs text-red-800 font-medium mb-4 leading-relaxed">Setzt das gesamte System für den Live-Start zurück. Alle Mitarbeiter, Schichten und Zeiten werden unwiderruflich gelöscht.</p>
+                                    <button 
+                                        onClick={() => { setShowSettingsModal(false); initiateSystemReset(); }} 
+                                        className="w-full bg-red-600 text-white py-3 rounded-xl font-bold text-xs uppercase shadow-md hover:bg-red-700 transition"
+                                    >
+                                        System Zurücksetzen
+                                    </button>
                                 </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {showManualLog && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[140] p-4">
-                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
-                                <div className="flex justify-between items-center mb-8"><h2 className="text-2xl font-black">Manuelle Buchung</h2><button onClick={() => setShowManualLog(false)} className="text-gray-400"><X size={28}/></button></div>
-                                <form onSubmit={handleManualLogSubmit} className="space-y-4">
-                                    <select required className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" value={manualLogData.employeeId} onChange={(e) => setManualLogData({...manualLogData, employeeId: e.target.value})}><option value="">Mitarbeiter...</option>{employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select>
-                                    <input type="date" required className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" value={manualLogData.date} onChange={(e) => setManualLogData({...manualLogData, date: e.target.value})} />
-                                    <div className="grid grid-cols-2 gap-4"><input type="time" required className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" value={manualLogData.startTime} onChange={(e) => setManualLogData({...manualLogData, startTime: e.target.value})} /><input type="time" required className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" value={manualLogData.endTime} onChange={(e) => setManualLogData({...manualLogData, endTime: e.target.value})} /></div>
-                                    <button type="submit" className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-lg">BUCHEN</button>
-                                </form>
-                            </div>
-                        </div>
-                    )}
-
-                    {showAddEmployee && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
-                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
-                                <div className="flex justify-between items-center mb-8"><h2 className="text-2xl font-black">Neuer Mitarbeiter</h2><button onClick={() => setShowAddEmployee(false)} className="text-gray-400"><X size={28}/></button></div>
-                                <form onSubmit={handleAddEmployee} className="space-y-4">
-                                    <input type="text" placeholder="Name" required value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" />
-                                    <input type="text" placeholder="PIN (4 Zahlen)" required maxLength={4} value={newEmpPin} onChange={(e) => setNewEmpPin(e.target.value.replace(/\D/g, ''))} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-mono text-2xl text-center" />
-                                    
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="col-span-2 relative">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Einsatzbereiche (Mehrere möglich)</label>
-                                            <div className="flex flex-wrap gap-2">
-                                                {AVAILABLE_ROLES.map(role => (
-                                                    <button
-                                                        type="button"
-                                                        key={role}
-                                                        onClick={() => {
-                                                            if (newEmpRoles.includes(role)) {
-                                                                if (newEmpRoles.length > 1) setNewEmpRoles(newEmpRoles.filter(r => r !== role));
-                                                            } else {
-                                                                setNewEmpRoles([...newEmpRoles, role]);
-                                                            }
-                                                        }}
-                                                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition ${newEmpRoles.includes(role) ? 'bg-orange-600 text-white border-orange-600 shadow-md' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
-                                                    >
-                                                        {role}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <div className="relative col-span-2">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Zugriffsrechte</label>
-                                            <select required value={newEmpAccess} onChange={(e) => setNewEmpAccess(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold">
-                                                <option value="user">Mitarbeiter</option>
-                                                <option value="manager">Dienstplaner</option>
-                                                <option value="admin">Admin</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                       <div className="relative"><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Geburtsdatum</label><input type="date" value={newEmpBirthDate} onChange={(e) => setNewEmpBirthDate(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" /></div>
-                                       <div className="relative"><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Soll-Stunden (Woche)</label><input type="number" step="0.5" required value={newEmpWeeklyHours} onChange={(e) => setNewEmpWeeklyHours(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold" placeholder="z.B. 40" /></div>
-                                    </div>
-                                    <button type="submit" className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-lg">ANLEGEN</button>
-                                </form>
                             </div>
                         </div>
                     )}
 
                     {showDeleteConfirm && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[170] p-4">
                             <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm">
                                 <div className="flex justify-between items-center mb-6">
                                     <h2 className="text-xl font-black text-red-600">Sicherheits-Check</h2>
