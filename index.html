@@ -143,7 +143,6 @@
             } catch(e) { return ''; }
         };
 
-        // Neues Format: "Mo. 13.04." (ohne Bindestrich)
         const formatDayDate = (dateVal) => {
             try {
                 if (!dateVal) return '';
@@ -917,7 +916,7 @@
           };
 
           const handleSaveEdit = async (e) => { e.preventDefault(); if (!editingLog) return; try { const start = new Date(`${editingLog.date}T${editingLog.startTimeStr}`); let end = new Date(`${editingLog.date}T${editingLog.endTimeStr}`); if (end < start) end.setDate(end.getDate() + 1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', editingLog.id), { startTime: Timestamp.fromDate(start), endTime: Timestamp.fromDate(end), date: editingLog.date, calculatedHours: calculateHours(start, end), note: editingLog.note || '' }); setEditingLog(null); showStatus("Gespeichert", "success"); } catch (err) { showStatus("Fehler", "error"); } };
-          const handleSaveSettlement = async (e) => { e.preventDefault(); if (!selectedEmpForDetails) return; const billed = parseFloat(settleData.billedHours); const carryOver = parseFloat(settleData.carryOver); try { const batch = writeBatch(db); const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'employees', selectedEmpForDetails.id); batch.update(empRef, { overtimeBalance: carryOver }); const startLimit = parseDateString(period.start).getTime(); const endLimit = parseDateString(period.end).setHours(23, 59, 59, 999); const logsToSettle = logs.filter(l => { if (l.employeeId !== selectedEmpForDetails.id || l.isSettled || !l.endTime) return false; const d = safeDate(l.startTime).getTime(); return d >= startLimit && d <= endLimit.getTime(); }); logsToSettle.forEach(log => { const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', log.id); batch.update(logRef, { isSettled: true }); }); const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements')); batch.set(settRef, { employeeId: selectedEmpForDetails.id, date: toLocalIsoDate(new Date()), periodStart: period.start, periodEnd: period.end, paidHours: billed, newBalance: carryOver, type: 'settlement' }); await batch.commit(); setShowSettleModal(false); showStatus("Abrechnung erfolgreich!", "success"); } catch(err) { showStatus("Fehler", "error"); } };
+          const handleSaveSettlement = async (e) => { e.preventDefault(); if (!selectedEmpForDetails) return; const billed = parseFloat(settleData.billedHours); const carryOver = parseFloat(settleData.carryOver); try { const batch = writeBatch(db); const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'employees', selectedEmpForDetails.id); batch.update(empRef, { overtimeBalance: carryOver }); const startLimit = parseDateString(period.start).getTime(); const endLimit = parseDateString(period.end).setHours(23, 59, 59, 999); const logsToSettle = logs.filter(l => { if (l.employeeId !== selectedEmpForDetails.id || l.isSettled || !l.endTime) return false; const d = safeDate(l.startTime).getTime(); return d >= startLimit && d <= endLimit; }); logsToSettle.forEach(log => { const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'timelogs', log.id); batch.update(logRef, { isSettled: true }); }); const settRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'settlements')); batch.set(settRef, { employeeId: selectedEmpForDetails.id, date: toLocalIsoDate(new Date()), periodStart: period.start, periodEnd: period.end, paidHours: billed, newBalance: carryOver, type: 'settlement' }); await batch.commit(); setShowSettleModal(false); showStatus("Abrechnung erfolgreich!", "success"); } catch(err) { showStatus("Fehler", "error"); } };
           const handleManualLogSubmit = async (e) => { e.preventDefault(); const emp = employees.find(e => e.id === manualLogData.employeeId); const s = new Date(`${manualLogData.date}T${manualLogData.startTime}`); let end = new Date(`${manualLogData.date}T${manualLogData.endTime}`); if (end < s) end.setDate(end.getDate() + 1); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'timelogs'), { employeeId: emp.id, employeeName: emp.name, startTime: Timestamp.fromDate(s), endTime: Timestamp.fromDate(end), date: manualLogData.date, calculatedHours: calculateHours(s, end), note: 'Manuell', isSettled: false }); setShowManualLog(false); showStatus("Gebucht", "success"); };
           
           const handleManualOvertimeSubmit = async (e) => {
@@ -1021,7 +1020,7 @@
               }).filter(g => g.emps.length > 0);
           }, [groupedEmployees, activeEmployee, shifts, empDaysOfWeek]);
 
-          // --- KOPIEREN VORWOCHE ---
+          // --- KOPIEREN VORWOCHE (Punkt 2) ---
           const handleCopyWeek = async () => {
               if (!confirm("Möchtest du alle Schichten der Vorwoche in diese Woche kopieren?")) return;
               setIsProcessing(true);
@@ -1048,6 +1047,7 @@
                       const newDate = new Date(oldDate);
                       newDate.setDate(newDate.getDate() + 7);
                       
+                      // Verhindern, dass Schichten doppelt kopiert werden
                       const exists = shifts.find(exist => exist.employeeId === s.employeeId && exist.date === toLocalIsoDate(newDate));
                       if (!exists) {
                           const newShiftRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'shifts'));
@@ -1390,7 +1390,7 @@
                 </nav>
 
                 <main className={`mx-auto w-full max-w-6xl ${(!activeEmployee && view === 'terminal') ? 'flex-1 flex flex-col p-4 overflow-hidden' : 'p-4 md:p-8'}`}>
-                    {statusMsg && <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 ${statusMsg.type === 'success' ? 'bg-gray-900 text-white' : 'bg-red-600 text-white'}`}><p className="font-bold text-sm">{statusMsg.msg}</p></div>}
+                    {statusMsg && <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 ${statusMsg.type === 'success' ? 'bg-gray-900 text-white' : 'bg-red-600 text-white'}`}><p className="font-bold text-sm">{statusMsg.msg}</p></div>}
 
                     {!activeEmployee && view === 'terminal' && (
                         <div className="flex-1 flex flex-col items-center justify-center p-4">
@@ -1455,7 +1455,7 @@
 
                     {activeEmployee && view === 'terminal' && (
                         <div className="max-w-4xl mx-auto space-y-6">
-                            {/* TAUSCHANFRAGEN BANNER (Punkt 3) */}
+                            {/* TAUSCHANFRAGEN BANNER */}
                             {availableSwaps.length > 0 && (
                                <div className="bg-blue-50 border-2 border-blue-200 p-6 rounded-[2rem] shadow-sm mb-6 flex flex-col gap-4 animate-in slide-in-from-top-4">
                                   <div className="flex items-center gap-3 text-blue-700">
@@ -1498,17 +1498,6 @@
                                </div>
                             )}
 
-                            {currentMsg && showEmployeeMsgPopup && (
-                                <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                                    <div className="bg-white p-10 rounded-[3rem] max-w-lg w-full text-center shadow-2xl relative overflow-hidden">
-                                        <Megaphone className="mx-auto text-orange-600 mb-6" size={64} />
-                                        <h2 className="text-2xl font-black uppercase mb-2">Nachricht vom Chef</h2>
-                                        <div className="bg-orange-50 p-6 rounded-2xl mb-8 border border-orange-100"><p className="text-xl font-bold text-gray-800 leading-snug">{currentMsg.content}</p></div>
-                                        <button onClick={() => setShowEmployeeMsgPopup(false)} className="w-full bg-gray-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl"><CheckCircle2 className="inline mr-2" /> OK</button>
-                                    </div>
-                                </div>
-                            )}
-
                             {/* Admin / Manager Access Buttons */}
                             {activeEmployee.accessLevel && (activeEmployee.accessLevel === 'admin' || activeEmployee.accessLevel === 'manager') && (
                                 <div className="flex flex-wrap gap-4 mb-4">
@@ -1527,12 +1516,8 @@
 
                             <div className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
                                 <div className="flex items-center gap-3"><Calendar size={18} className="text-orange-600" /><span className="font-black text-[10px] uppercase tracking-widest text-gray-500">Zeitraum wählen</span></div>
-                                <div className="flex items-center justify-between gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100 w-full sm:w-auto">
-                                    <button onClick={handlePrevPeriod} className="p-2 text-gray-500 hover:bg-white rounded-xl transition"><ChevronLeft size={16}/></button>
-                                    <div className="font-bold text-xs text-gray-800 text-center px-2 min-w-[160px]">
-                                        {formatDate(period?.start)} - {formatDate(period?.end)}
-                                    </div>
-                                    <button onClick={handleNextPeriod} className="p-2 text-gray-500 hover:bg-white rounded-xl transition"><ChevronRight size={16}/></button>
+                                <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border border-gray-100">
+                                    <input type="date" value={period?.start || ''} onChange={(e) => setPeriod({...period, start: e.target.value})} className="bg-transparent font-bold text-xs p-1 outline-none" /><span className="text-gray-300">-</span><input type="date" value={period?.end || ''} onChange={(e) => setPeriod({...period, end: e.target.value})} className="bg-transparent font-bold text-xs p-1 outline-none" />
                                 </div>
                             </div>
 
@@ -1557,144 +1542,38 @@
                                 </div>
                             </div>
 
-                            {/* MEIN DIENSTPLAN & VERFÜGBARKEIT */}
+                            {/* MEINE BEVORSTEHENDEN SCHICHTEN (Tauschbörse) */}
                             <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] shadow-sm border border-gray-100 mt-6">
-                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                                    <div>
-                                        <h3 className="text-xl font-black tracking-tight flex items-center gap-2"><CalendarClock size={20} className="text-orange-600" /> Mein Dienstplan & Team-Plan</h3>
-                                    </div>
-                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-                                        <div className="flex bg-gray-100 p-1 rounded-xl w-full sm:w-auto">
-                                            <button onClick={() => setEmpScheduleView('me')} className={`flex-1 px-3 py-2 sm:px-4 text-xs font-bold rounded-lg transition whitespace-nowrap ${empScheduleView === 'me' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Meine Woche</button>
-                                            <button onClick={() => setEmpScheduleView('team')} className={`flex-1 px-3 py-2 sm:px-4 text-xs font-bold rounded-lg transition whitespace-nowrap ${empScheduleView === 'team' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Team-Plan</button>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100 w-full sm:w-auto shrink-0">
-                                            <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() - 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronLeft size={16}/></button>
-                                            <div className="font-bold text-xs text-gray-800 text-center px-2">
-                                               {empDaysOfWeek.length > 0 ? `${formatDayDate(empDaysOfWeek[0])} - ${formatDayDate(empDaysOfWeek[6])}` : ''}
-                                            </div>
-                                            <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() + 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronRight size={16}/></button>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                {empScheduleView === 'me' && (
-                                    <div className="grid grid-cols-7 gap-2">
-                                        {empDaysOfWeek.map(d => {
-                                            const dateStr = toLocalIsoDate(d);
-                                            if (!dateStr) return null;
-                                            const isAvail = availabilities.some(a => a.employeeId === activeEmployee.id && a.date === dateStr);
-                                            const plannedShift = shifts.find(s => s.employeeId === activeEmployee.id && s.date === dateStr);
-                                            const isPlanned = !!plannedShift;
-                                            const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-                                            
-                                            const today = new Date(new Date().setHours(0,0,0,0));
-                                            const isFutureOrToday = d >= today;
-                                            const pendingSwap = isPlanned ? shiftSwaps.find(swap => swap.shiftId === plannedShift.id && swap.status === 'pending') : null;
-                                            
-                                            return (
-                                                <button
-                                                    key={dateStr}
-                                                    onClick={() => {
-                                                        if (isPlanned) {
-                                                            if (isFutureOrToday) {
-                                                                if (pendingSwap) {
-                                                                    if(window.confirm("Möchtest du das Tauschangebot wirklich zurückziehen?")) {
-                                                                        handleDeclineSwap(pendingSwap.id);
-                                                                    }
-                                                                } else {
-                                                                    setShowSwapModal(plannedShift);
-                                                                }
-                                                            }
-                                                        } else {
-                                                            if (isFutureOrToday) {
-                                                                toggleAvailability(activeEmployee.id, dateStr);
-                                                            }
-                                                        }
-                                                    }}
-                                                    disabled={!isFutureOrToday}
-                                                    className={`flex flex-col items-center justify-center p-1 sm:p-2 pb-10 sm:pb-14 rounded-2xl border-2 transition-all relative overflow-hidden ${
-                                                        isPlanned 
-                                                            ? pendingSwap 
-                                                                ? 'border-blue-400 bg-blue-50 text-blue-900 shadow-md cursor-pointer hover:bg-blue-100' 
-                                                                : (isFutureOrToday ? 'border-orange-400 bg-orange-50 text-orange-900 shadow-md hover:bg-orange-100 cursor-pointer' : 'border-gray-300 bg-gray-100 text-gray-500 opacity-70 cursor-not-allowed')
-                                                            : isAvail 
-                                                                ? 'border-green-500 bg-green-50 text-green-700 shadow-md cursor-pointer hover:bg-green-100' 
-                                                                : (isFutureOrToday ? 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-300 cursor-pointer' : 'border-gray-100 bg-gray-50 text-gray-300 opacity-50 cursor-not-allowed')
-                                                    }`}
-                                                >
-                                                    <span className={`text-[10px] sm:text-xs font-black uppercase mb-1 ${isPlanned ? (pendingSwap ? 'text-blue-500' : (isFutureOrToday ? 'text-orange-500' : 'text-gray-400')) : ''}`}>{dayNames[d.getDay()]}</span>
-                                                    <span className={`text-xl sm:text-2xl font-black ${isPlanned ? (pendingSwap ? 'text-blue-700' : (isFutureOrToday ? 'text-orange-700' : 'text-gray-500')) : ''}`}>{d.getDate()}</span>
-                                                    
-                                                    {isPlanned && (
-                                                        <div className="absolute bottom-1.5 w-full text-center leading-tight">
-                                                            <div className={`text-[9px] sm:text-[10px] font-black uppercase ${pendingSwap ? 'text-blue-600' : (isFutureOrToday ? 'text-orange-600' : 'text-gray-500')} truncate px-0.5`}>{plannedShift.role || 'Schicht'}</div>
-                                                            <div className={`text-[10px] sm:text-xs font-bold ${pendingSwap ? 'text-blue-500' : (isFutureOrToday ? 'text-orange-500' : 'text-gray-400')} tracking-tighter mt-0.5`}>{plannedShift.startTime}-{plannedShift.endTime}</div>
-                                                            {pendingSwap && <div className="text-[7px] sm:text-[8px] bg-blue-600 text-white mt-1 mx-1 rounded-sm uppercase tracking-widest font-bold py-0.5">Tausch</div>}
-                                                        </div>
-                                                    )}
-                                                    {!isPlanned && isAvail && <span className="absolute bottom-2 text-[8px] sm:text-[10px] font-black uppercase text-green-600">Verfügbar</span>}
-                                                </button>
-                                            )
-                                        })}
-                                    </div>
-                                )}
-                                
-                                {empScheduleView === 'team' && (
-                                    <div className="overflow-x-auto mt-4 border border-gray-100 rounded-xl">
-                                       <table className="w-full text-left border-collapse min-w-[700px] table-fixed">
-                                          <thead className="bg-gray-50">
-                                             <tr>
-                                                <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase border-b border-r border-gray-200 w-[20%]">Mitarbeiter</th>
-                                                {empDaysOfWeek.map((d, i) => (
-                                                   <th key={i} className={`px-2 py-4 text-center border-b border-r border-gray-200 w-[11%] ${i===6 ? 'bg-orange-50/30' : ''}`}>
-                                                      <div className="text-[11px] font-black text-gray-800 uppercase">{formatDayDate(d).split(' ')[0]}</div>
-                                                      <div className="text-[10px] text-gray-500">{formatDayDate(d).split(' ')[1]}</div>
-                                                   </th>
-                                                ))}
-                                             </tr>
-                                          </thead>
-                                          <tbody className="divide-y divide-gray-100">
-                                              {teamPlanGroups.map(group => (
-                                                  <React.Fragment key={group.role}>
-                                                      <tr><td colSpan="8" className="bg-gray-100 px-4 py-2 text-[10px] font-black text-gray-500 uppercase tracking-widest">{group.role}</td></tr>
-                                                      {group.emps.map(emp => (
-                                                          <tr key={emp.id} className="hover:bg-gray-50/30 transition">
-                                                              <td className="px-4 py-3 border-r border-gray-100">
-                                                                  <div className={`font-bold text-sm truncate ${emp.id === activeEmployee.id ? 'text-orange-600' : 'text-gray-900'}`}>{emp.name} {emp.id === activeEmployee.id && '(Ich)'}</div>
-                                                              </td>
-                                                              {empDaysOfWeek.map((d, idx) => {
-                                                                  const dateStr = toLocalIsoDate(d);
-                                                                  const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr && (s.role === group.role || (!s.role && group.role === 'Service')));
-                                                                  const pendingSwap = shift ? shiftSwaps.find(swap => swap.shiftId === shift.id && swap.status === 'pending') : null;
-                                                                  
-                                                                  return (
-                                                                      <td key={dateStr} className={`border-r border-gray-100 p-1 align-middle ${idx===6 ? 'bg-orange-50/10' : ''}`}>
-                                                                          {shift ? (
-                                                                              <div 
-                                                                                  onClick={() => {
-                                                                                      if (emp.id !== activeEmployee.id && parseDateString(shift.date) >= new Date(new Date().setHours(0,0,0,0))) {
-                                                                                          setShowTakeoverModal(shift);
-                                                                                      }
-                                                                                  }}
-                                                                                  className={`rounded-lg p-2 transition flex flex-col items-center justify-center min-h-[48px] relative overflow-hidden ${emp.id !== activeEmployee.id && parseDateString(shift.date) >= new Date(new Date().setHours(0,0,0,0)) ? 'cursor-pointer hover:scale-105 shadow-md' : 'opacity-80'}`}
-                                                                                  style={{ backgroundColor: pendingSwap ? '#eff6ff' : (shift.color || '#f97316') + '1a', border: '1px solid ' + (pendingSwap ? '#3b82f6' : (shift.color || '#f97316')) }}
-                                                                              >
-                                                                                  <div className="text-[10px] font-bold text-center" style={{ color: pendingSwap ? '#1d4ed8' : (shift.color || '#ea580c') }}>{shift.startTime} - {shift.endTime}</div>
-                                                                                  {pendingSwap && <div className="text-[7px] bg-blue-500 text-white mt-1 px-1 rounded-sm uppercase tracking-widest font-bold">Im Tausch</div>}
-                                                                              </div>
-                                                                          ) : null}
-                                                                      </td>
-                                                                  );
-                                                              })}
-                                                          </tr>
-                                                      ))}
-                                                  </React.Fragment>
-                                              ))}
-                                          </tbody>
-                                       </table>
-                                    </div>
-                                )}
+                               <div className="flex items-center gap-3 mb-6">
+                                  <CalendarDays size={20} className="text-orange-600" />
+                                  <h3 className="text-xl font-black tracking-tight">Meine geplanten Schichten</h3>
+                               </div>
+                               
+                               {myUpcomingShifts.length === 0 ? (
+                                   <p className="text-sm text-gray-400 italic">Keine Schichten in der Zukunft geplant.</p>
+                               ) : (
+                                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                       {myUpcomingShifts.map(s => {
+                                           const hasPendingSwap = shiftSwaps.some(swap => swap.shiftId === s.id);
+                                           return (
+                                               <div key={s.id} className="p-4 rounded-2xl border border-gray-100 bg-gray-50 flex justify-between items-center group hover:border-orange-200 transition">
+                                                   <div>
+                                                      <div className="font-black text-gray-800">{formatDayDate(s.date).split(' ')[1]}</div>
+                                                      <div className="text-sm font-bold text-orange-600">{s.startTime} - {s.endTime} Uhr</div>
+                                                      <div className="text-[10px] uppercase font-bold text-gray-500 mt-1">{s.role}</div>
+                                                   </div>
+                                                   {hasPendingSwap ? (
+                                                       <span className="text-[10px] font-bold text-orange-500 uppercase px-2 text-center">Tausch<br/>angefragt</span>
+                                                   ) : (
+                                                       <button onClick={() => setShowSwapModal(s)} className="p-3 bg-white rounded-xl shadow-sm text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition" title="Schicht abgeben / tauschen">
+                                                          <ArrowRightLeft size={18} />
+                                                       </button>
+                                                   )}
+                                               </div>
+                                           )
+                                       })}
+                                   </div>
+                               )}
                             </div>
 
                             {/* MEINE ZEITEN (Historie mit Pausen-Anzeige) */}
@@ -1718,7 +1597,7 @@
                                                         {log.note && <div className="mt-1 flex items-center gap-1 text-[10px] text-orange-600 font-sans font-bold leading-tight"><MessageSquare size={10} className="flex-none" /> <span>{log.note}</span></div>}
                                                     </td>
                                                     <td className="px-4 py-4 text-center">
-                                                        <div className="font-black text-orange-600">{log.endTime ? calculateHours(log.startTime, log.endTime) : '0.00'}h</div>
+                                                        <div className="font-black text-orange-600">{log.calculatedHours || '0.00'}h</div>
                                                         {bMins > 0 && <div className="text-[9px] font-bold text-gray-400 uppercase mt-1">-{bMins} Min Pause</div>}
                                                     </td>
                                                     <td className="px-4 py-4 text-center text-[10px] uppercase font-bold">{log.isSettled ? <span className="text-green-500">Abgerechnet</span> : <span className="text-gray-400">Offen</span>}</td>
@@ -1726,6 +1605,52 @@
                                             )})}
                                         </tbody>
                                     </table>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] shadow-sm border border-gray-100 mt-6">
+                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                                    <div>
+                                        <h3 className="text-xl font-black tracking-tight flex items-center gap-2"><CalendarClock size={20} className="text-orange-600" /> Verfügbarkeit eintragen</h3>
+                                        <p className="text-xs text-gray-500 mt-1">Tippe auf die Tage, an denen du arbeiten kannst.</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100 w-full sm:w-auto">
+                                        <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() - 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronLeft size={16}/></button>
+                                        <div className="flex-1 sm:w-32 font-bold text-xs text-gray-800 text-center">
+                                           {empDaysOfWeek.length > 0 ? `${formatDayDate(empDaysOfWeek[0]).split(' ')[1]} - ${formatDayDate(empDaysOfWeek[6]).split(' ')[1]}` : ''}
+                                        </div>
+                                        <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() + 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronRight size={16}/></button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-7 gap-2">
+                                    {empDaysOfWeek.map(d => {
+                                        const dateStr = toLocalIsoDate(d);
+                                        if (!dateStr) return null;
+                                        const isAvail = availabilities.some(a => a.employeeId === activeEmployee.id && a.date === dateStr);
+                                        const plannedShift = shifts.find(s => s.employeeId === activeEmployee.id && s.date === dateStr);
+                                        const isPlanned = !!plannedShift;
+                                        const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+                                        
+                                        return (
+                                            <button
+                                                key={dateStr}
+                                                onClick={() => toggleAvailability(activeEmployee.id, dateStr)}
+                                                disabled={isPlanned}
+                                                className={`flex flex-col items-center justify-center p-1 sm:p-2 pb-10 sm:pb-12 rounded-2xl border-2 transition-all relative overflow-hidden ${isPlanned ? 'border-orange-200 bg-orange-50 cursor-not-allowed opacity-90' : isAvail ? 'border-green-500 bg-green-50 text-green-700 shadow-md' : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-300'}`}
+                                            >
+                                                <span className={`text-[10px] sm:text-xs font-black uppercase mb-1 ${isPlanned ? 'text-orange-500' : ''}`}>{dayNames[d.getDay()]}</span>
+                                                <span className={`text-xl sm:text-2xl font-black ${isPlanned ? 'text-orange-700' : ''}`}>{d.getDate()}</span>
+                                                
+                                                {isPlanned && (
+                                                    <div className="absolute bottom-1.5 w-full text-center leading-tight">
+                                                        <div className="text-[9px] sm:text-[10px] font-black uppercase text-orange-600 truncate px-0.5">{plannedShift.role || 'Schicht'}</div>
+                                                        <div className="text-[10px] sm:text-xs font-bold text-orange-500 tracking-tighter mt-0.5">{plannedShift.startTime}-{plannedShift.endTime}</div>
+                                                    </div>
+                                                )}
+                                                {!isPlanned && isAvail && <span className="absolute bottom-2 text-[8px] sm:text-[10px] font-black uppercase text-green-600">Verfügbar</span>}
+                                            </button>
+                                        )
+                                    })}
                                 </div>
                             </div>
                         </div>
@@ -1765,12 +1690,12 @@
                                                 <button type="button" onClick={handleNextPeriod} className="p-3 text-gray-500 hover:bg-white rounded-xl transition"><ChevronRight size={18}/></button>
                                             </div>
                                             <button type="button" onClick={() => setShowBossMsgModal(true)} className="bg-orange-50 text-orange-600 p-4 rounded-2xl border border-orange-100 hover:bg-orange-100 transition flex items-center gap-2 font-bold text-xs uppercase"><Megaphone size={16}/></button>
-                                            <button type="button" onClick={() => setShowManualLog(true)} className="bg-gray-100 text-gray-800 p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-gray-200 transition relative z-10"><PlusCircle size={16}/> EINTRAG</button>
+                                            <button type="button" onClick={() => setShowManualLog(true)} className="bg-gray-100 text-gray-800 p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-gray-200 transition"><PlusCircle size={16}/> EINTRAG</button>
                                             
                                             {/* CSV EXPORT BUTTON */}
-                                            <button type="button" onClick={handleExportCSV} className="bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 transition relative z-10"><Download size={16}/> CSV Export</button>
+                                            <button type="button" onClick={handleExportCSV} className="bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 transition"><Download size={16}/> CSV Export</button>
 
-                                            <button type="button" onClick={() => setShowAddEmployee(true)} className="bg-orange-600 text-white p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-orange-700 transition relative z-10"><UserPlus size={16}/> PERSONAL</button>
+                                            <button type="button" onClick={() => setShowAddEmployee(true)} className="bg-orange-600 text-white p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-orange-700 transition"><UserPlus size={16}/> PERSONAL</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1846,7 +1771,7 @@
                                                                     {log.note && <div className="mt-1 flex items-center gap-1 text-[10px] text-orange-600 font-sans font-bold leading-tight"><MessageSquare size={10} className="flex-none" /> <span>{log.note}</span></div>}
                                                                 </td>
                                                                 <td className="px-4 py-4 text-center">
-                                                                    <div className="font-black text-orange-600">{log.endTime ? calculateHours(log.startTime, log.endTime) : '0.00'}h</div>
+                                                                    <div className="font-black text-orange-600">{log.calculatedHours || '0.00'}h</div>
                                                                     {bMins > 0 && <div className="text-[9px] font-bold text-gray-400 uppercase mt-1">-{bMins} Min Pause</div>}
                                                                 </td>
                                                                 <td className="px-4 py-4 text-center text-[10px] uppercase font-bold">{log.isSettled ? <span className="text-green-500">Abgerechnet</span> : <span className="text-gray-400">Offen</span>}</td>
@@ -1957,14 +1882,6 @@
                                                                 const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr && (s.role === group.role || (!s.role && group.role === 'Service')));
                                                                 const isAvail = availabilities.some(a => a.employeeId === emp.id && a.date === dateStr);
                                                                 
-                                                                let dynamicCalcH = "0.00";
-                                                                if (shift) {
-                                                                    const shiftS = new Date(`${dateStr}T${shift.startTime}`);
-                                                                    let shiftE = new Date(`${dateStr}T${shift.endTime}`);
-                                                                    if (shiftE < shiftS) shiftE.setDate(shiftE.getDate() + 1);
-                                                                    dynamicCalcH = calculateHours(shiftS, shiftE);
-                                                                }
-
                                                                 return (
                                                                    <td key={dateStr} className={`border-r border-gray-100 p-2 align-middle ${idx===6 ? 'bg-orange-50/10' : ''}`}>
                                                                       {shift ? (
@@ -1974,7 +1891,7 @@
                                                                             style={{ backgroundColor: (shift.color || '#f97316') + '1a', border: '1px solid ' + (shift.color || '#f97316') }}
                                                                          >
                                                                             <div className="text-xs font-bold text-center" style={{ color: shift.color || '#ea580c' }}>{shift.startTime} - {shift.endTime}</div>
-                                                                            <div className="text-[9px] text-center font-black mt-1" style={{ color: shift.color || '#ea580c' }}>{dynamicCalcH} h</div>
+                                                                            <div className="text-[9px] text-center font-black mt-1" style={{ color: shift.color || '#ea580c' }}>{shift.calculatedHours} h</div>
                                                                          </div>
                                                                       ) : (
                                                                          isAvail ? (
@@ -2018,15 +1935,63 @@
                         </div>
                     )}
 
-                    {/* --- MODALS --- */}
+                    {/* --- GLOBAL MODALS --- */}
                     
-                    {/* SCHICHT ÜBERNEHMEN ANFRAGEN MODAL (Für Mitarbeiter) */}
+                    {currentMsg && showEmployeeMsgPopup && (
+                        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-white p-10 rounded-[3rem] max-w-lg w-full text-center shadow-2xl relative overflow-hidden">
+                                <Megaphone className="mx-auto text-orange-600 mb-6" size={64} />
+                                <h2 className="text-2xl font-black uppercase mb-2">Nachricht vom Chef</h2>
+                                <div className="bg-orange-50 p-6 rounded-2xl mb-8 border border-orange-100"><p className="text-xl font-bold text-gray-800 leading-snug">{currentMsg.content}</p></div>
+                                <button type="button" onClick={() => setShowEmployeeMsgPopup(false)} className="w-full bg-gray-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl"><CheckCircle2 className="inline mr-2" /> OK</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {showBossMsgModal && (
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-xl font-black flex items-center gap-2"><Megaphone className="text-orange-600"/> Team-Nachricht</h2>
+                                    <button type="button" onClick={() => setShowBossMsgModal(false)} className="text-gray-400 hover:text-gray-900 transition"><X size={24}/></button>
+                                </div>
+                                <form onSubmit={handlePostBossMessage} className="space-y-4">
+                                    <div>
+                                        <textarea required value={newBossMessage} onChange={e=>setNewBossMessage(e.target.value)} placeholder="Nachricht an das Team..." className="w-full p-4 border-2 border-gray-100 rounded-2xl font-bold bg-gray-50 outline-none focus:border-orange-500 h-32 resize-none"></textarea>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Empfänger</label>
+                                        <select value={msgRecipient} onChange={e=>setMsgRecipient(e.target.value)} className="w-full p-4 border-2 border-gray-100 rounded-2xl font-bold bg-gray-50 outline-none focus:border-orange-500 appearance-none">
+                                            <option value="all">An alle Mitarbeiter</option>
+                                            {employees.map(e => <option key={e.id} value={e.id}>Nur an: {e.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <button type="submit" className="w-full bg-orange-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-orange-700 transition">NACHRICHT SENDEN</button>
+                                </form>
+                                
+                                {bossMessages.length > 0 && (
+                                    <div className="mt-6 border-t border-gray-100 pt-4 max-h-40 overflow-y-auto space-y-2">
+                                        {bossMessages.map(msg => (
+                                            <div key={msg.id} className="bg-gray-50 p-3 rounded-xl flex justify-between items-center border border-gray-100">
+                                                <div className="truncate pr-4">
+                                                    <p className="text-xs font-bold text-gray-800">{msg.content}</p>
+                                                    <p className="text-[9px] font-bold text-gray-500 uppercase mt-1">An: {msg.recipientId === 'all' ? 'Alle' : employees.find(e=>e.id===msg.recipientId)?.name}</p>
+                                                </div>
+                                                <button type="button" onClick={() => handleDeleteMessage(msg.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 size={16}/></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {showTakeoverModal && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[160] p-4">
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
                             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
                                <div className="flex justify-between items-center mb-6">
                                   <h2 className="text-xl font-black">Schicht anfragen</h2>
-                                  <button onClick={() => { setShowTakeoverModal(null); setTakeoverMode('takeover'); setTradeShiftId(''); }} className="text-gray-400 hover:text-gray-900 transition"><X size={24}/></button>
+                                  <button type="button" onClick={() => { setShowTakeoverModal(null); setTakeoverMode('takeover'); setTradeShiftId(''); }} className="text-gray-400 hover:text-gray-900 transition"><X size={24}/></button>
                                </div>
                                
                                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6 text-center">
@@ -2066,18 +2031,17 @@
                                    </div>
                                )}
                                
-                               <button onClick={handleRequestTakeover} disabled={takeoverMode === 'swap' && !tradeShiftId} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-black transition disabled:opacity-50 disabled:cursor-not-allowed">ANFRAGE SENDEN</button>
+                               <button type="button" onClick={handleRequestTakeover} disabled={takeoverMode === 'swap' && !tradeShiftId} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-black transition disabled:opacity-50 disabled:cursor-not-allowed">ANFRAGE SENDEN</button>
                             </div>
                         </div>
                     )}
 
-                    {/* TAUSCHANFRAGE SENDEN MODAL */}
                     {showSwapModal && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[160] p-4">
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
                             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm">
                                <div className="flex justify-between items-center mb-6">
                                   <h2 className="text-xl font-black">Schicht abgeben</h2>
-                                  <button onClick={() => { setShowSwapModal(null); setSwapTargetEmp('all'); }} className="text-gray-400 hover:text-gray-900 transition"><X size={24}/></button>
+                                  <button type="button" onClick={() => { setShowSwapModal(null); setSwapTargetEmp('all'); }} className="text-gray-400 hover:text-gray-900 transition"><X size={24}/></button>
                                </div>
                                
                                <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 mb-6 text-center">
@@ -2091,7 +2055,7 @@
                                   <select required value={swapTargetEmp} onChange={e=>setSwapTargetEmp(e.target.value)} className="w-full p-4 border-2 border-gray-100 rounded-2xl font-bold bg-gray-50 outline-none focus:border-orange-500 appearance-none">
                                      <option value="all">🚀 Offene Tauschbörse (Alle Kollegen)</option>
                                      <optgroup label="Direkt an einen Kollegen anfragen:">
-                                         {employees.filter(e => e.id !== activeEmployee.id && (e.roles || (e.primaryRole ? [e.primaryRole] : ['Service'])).includes(showSwapModal.role || 'Service')).map(e => (
+                                         {employees.filter(e => e.id !== activeEmployee?.id && (e.roles || (e.primaryRole ? [e.primaryRole] : ['Service'])).includes(showSwapModal.role || 'Service')).map(e => (
                                              <option key={e.id} value={e.id}>{e.name}</option>
                                          ))}
                                      </optgroup>
@@ -2102,13 +2066,12 @@
                         </div>
                     )}
 
-                    {/* SCHICHT VORLAGEN VERWALTEN MODAL */}
                     {showShiftTemplateModal && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
                             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
                                 <div className="flex justify-between items-center mb-6">
                                     <h2 className="text-xl font-black">Schicht-Vorlagen</h2>
-                                    <button onClick={() => setShowShiftTemplateModal(false)} className="text-gray-400"><X size={24}/></button>
+                                    <button type="button" onClick={() => setShowShiftTemplateModal(false)} className="text-gray-400"><X size={24}/></button>
                                 </div>
                                 
                                 <form onSubmit={handleSaveTemplate} className="space-y-3 mb-8 bg-gray-50 p-4 rounded-2xl border border-gray-100">
@@ -2154,8 +2117,8 @@
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1">
-                                                <button onClick={() => setNewTemplate(t)} className="text-gray-300 hover:text-orange-600 p-2"><Edit3 size={16}/></button>
-                                                <button onClick={() => handleDeleteTemplate(t.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 size={16}/></button>
+                                                <button type="button" onClick={() => setNewTemplate(t)} className="text-gray-300 hover:text-orange-600 p-2"><Edit3 size={16}/></button>
+                                                <button type="button" onClick={() => handleDeleteTemplate(t.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 size={16}/></button>
                                             </div>
                                         </div>
                                     ))}
@@ -2164,13 +2127,12 @@
                         </div>
                     )}
 
-                    {/* SCHICHT PLANEN MODAL */}
                     {showShiftModal && shiftData && shiftData.employeeId && (
-                       <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
+                       <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
                           <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm">
                              <div className="flex justify-between items-center mb-6">
                                 <h2 className="text-xl font-black">{shiftData.id ? 'Schicht bearbeiten' : 'Schicht eintragen'}</h2>
-                                <button onClick={() => { setShowShiftModal(false); }} className="text-gray-400"><X size={24}/></button>
+                                <button type="button" onClick={() => { setShowShiftModal(false); }} className="text-gray-400"><X size={24}/></button>
                              </div>
                              
                              <p className="text-sm font-bold text-gray-500 mb-2">{employees.find(e=>e.id===shiftData.employeeId)?.name} &bull; {formatDate(shiftData.date)}</p>
@@ -2179,7 +2141,7 @@
                              {!shiftData.id ? (
                                  <div className="mb-6">
                                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Vorlage wählen</label>
-                                     <div className="grid grid-cols-1 gap-2">
+                                     <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2">
                                          {shiftTemplates.map(t => (
                                              <button 
                                                 type="button" 
@@ -2213,21 +2175,21 @@
                     )}
 
                     {showSecurityModal && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[130] p-4">
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
                             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-lg">
-                                <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-black tracking-tight text-red-600 flex items-center gap-2"><Siren size={24}/> Sicherheits-Protokoll</h2><button onClick={() => setShowSecurityModal(false)} className="text-gray-400 p-1"><X size={28}/></button></div>
+                                <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-black tracking-tight text-red-600 flex items-center gap-2"><Siren size={24}/> Sicherheits-Protokoll</h2><button type="button" onClick={() => setShowSecurityModal(false)} className="text-gray-400 p-1"><X size={28}/></button></div>
                                 <div className="bg-red-50 p-4 rounded-xl border border-red-100 text-xs text-red-800 mb-4 font-medium">Hier werden Versuche protokolliert, die Schicht außerhalb des Radius zu starten/beenden.</div>
                                 <div className="space-y-3 max-h-96 overflow-y-auto">
-                                    {securityLogs.length === 0 ? <p className="text-center text-gray-400 py-10 italic">Keine Vorfälle gemeldet</p> : securityLogs.map(log => (<div key={log.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-between items-start"><div><p className="font-bold text-gray-800">{log.employeeName}</p><p className="text-xs text-red-500 font-bold mt-1">{log.reason}</p><p className="text-[10px] text-gray-400 mt-2">{safeDate(log.timestamp).toLocaleString('de-DE')}</p></div><button onClick={() => handleDeleteSecurityLog(log.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 size={16}/></button></div>))}
+                                    {securityLogs.length === 0 ? <p className="text-center text-gray-400 py-10 italic">Keine Vorfälle gemeldet</p> : securityLogs.map(log => (<div key={log.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-between items-start"><div><p className="font-bold text-gray-800">{log.employeeName}</p><p className="text-xs text-red-500 font-bold mt-1">{log.reason}</p><p className="text-[10px] text-gray-400 mt-2">{safeDate(log.timestamp).toLocaleString('de-DE')}</p></div><button type="button" onClick={() => handleDeleteSecurityLog(log.id)} className="text-gray-300 hover:text-red-500 p-2"><Trash2 size={16}/></button></div>))}
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {showSettleModal && selectedEmpForDetails && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[120] p-4">
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
                             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
-                                <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black tracking-tight">Abrechnung</h2><button onClick={() => setShowSettleModal(false)} className="text-gray-400 p-1"><X size={28} /></button></div>
+                                <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black tracking-tight">Abrechnung</h2><button type="button" onClick={() => setShowSettleModal(false)} className="text-gray-400 p-1"><X size={28} /></button></div>
                                 <div className="bg-gray-50 p-6 rounded-2xl mb-6 space-y-2">
                                     <div className="flex justify-between text-sm"><span className="text-gray-500 font-bold">Verfügbar:</span><span className="font-black text-gray-900">{getEmployeeStats(selectedEmpForDetails.id, period).totalAvailable} h</span></div>
                                     <div className="flex justify-between text-sm"><span className="text-gray-500 font-bold">Auszahlen:</span><span className="font-black text-red-600">-{settleData.billedHours} h</span></div>
@@ -2252,9 +2214,8 @@
                         </div>
                     )}
 
-                    {/* CLOCK OUT MODAL MIT CHECKLISTE */}
                     {showClockOutModal && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[130] p-4">
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
                             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm">
                                 <div className="flex items-center gap-3 mb-6">
                                    <ListTodo className="text-orange-600" size={28} />
@@ -2280,21 +2241,22 @@
                                 <textarea value={clockOutNote} onChange={e=>setClockOutNote(e.target.value)} className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-2xl mb-4 h-24 focus:border-orange-500 outline-none" placeholder="Notiz (optional)..."></textarea>
                                 
                                 <button 
+                                   type="button"
                                    onClick={handleConfirmClockOut} 
                                    disabled={!(checklist.cash && checklist.clean && checklist.trash)}
                                    className={`w-full py-4 rounded-2xl font-bold shadow-lg transition ${checklist.cash && checklist.clean && checklist.trash ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                                 >
                                    AUSSTEMPELN
                                 </button>
-                                <button onClick={() => setShowClockOutModal(false)} className="w-full mt-3 py-2 text-sm font-bold text-gray-500 hover:text-gray-800">Abbrechen</button>
+                                <button type="button" onClick={() => setShowClockOutModal(false)} className="w-full mt-3 py-2 text-sm font-bold text-gray-500 hover:text-gray-800">Abbrechen</button>
                             </div>
                         </div>
                     )}
 
                     {showEditEmpModal && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[130] p-4">
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
                             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
-                                <div className="flex justify-between mb-6"><h2 className="font-black text-xl">Profil</h2><X onClick={()=>setShowEditEmpModal(false)} className="cursor-pointer text-gray-400 hover:text-gray-800"/></div>
+                                <div className="flex justify-between items-center mb-6"><h2 className="font-black text-xl">Profil</h2><button type="button" onClick={()=>setShowEditEmpModal(false)} className="text-gray-400 hover:text-gray-900"><X size={24}/></button></div>
                                 <form onSubmit={handleEditEmployee} className="space-y-4">
                                     <div><label className="text-xs font-bold text-gray-400 ml-1">Name</label><input value={editEmpData.name} onChange={e=>setEditEmpData({...editEmpData, name:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold mt-1" placeholder="Name" /></div>
                                     <div><label className="text-xs font-bold text-gray-400 ml-1">PIN (Zum Login)</label><input value={editEmpData.pin} onChange={e=>setEditEmpData({...editEmpData, pin:e.target.value.replace(/\D/g, '')})} maxLength={4} className="w-full p-4 border-2 rounded-2xl font-mono text-xl tracking-widest font-bold mt-1" placeholder="PIN" /></div>
@@ -2336,22 +2298,141 @@
                                        <div><label className="text-xs font-bold text-gray-400 ml-1">Wochenstunden (Soll)</label><input type="number" step="0.5" required value={editEmpData.weeklyHours} onChange={e=>setEditEmpData({...editEmpData, weeklyHours:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="z.B. 40" /></div>
                                        <div><label className="text-xs font-bold text-gray-400 ml-1">Konto-Korrektur</label><input type="number" step="0.01" value={editEmpData.overtimeBalance} onChange={e=>setEditEmpData({...editEmpData, overtimeBalance:e.target.value})} className="w-full p-4 border-2 rounded-2xl font-bold" placeholder="z.B. 2.5" /></div>
                                     </div>
-                                    <button className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold">SPEICHERN</button>
+                                    <button type="submit" className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold">SPEICHERN</button>
                                 </form>
                             </div>
                         </div>
                     )}
 
-                    {/* EINSTELLUNGEN MODAL (Zahnrad) */}
+                    {showOvertimeHistoryModal && selectedEmpForDetails && (
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto">
+                                <div className="flex justify-between items-center mb-6">
+                                    <div className="flex items-center gap-2 text-orange-600"><History size={24} /><h2 className="text-xl font-black">Konto-Verlauf</h2></div>
+                                    <button type="button" onClick={() => setShowOvertimeHistoryModal(false)} className="text-gray-400 hover:text-gray-900"><X size={24}/></button>
+                                </div>
+                                
+                                <div className="bg-gray-50 p-4 rounded-2xl mb-6">
+                                    <p className="text-xs font-bold text-gray-400 uppercase mb-2">Manuelle Korrektur</p>
+                                    <form onSubmit={handleManualOvertimeSubmit} className="flex flex-col gap-3">
+                                        <div className="flex gap-2">
+                                            <input type="number" step="0.01" placeholder="+/- Std" className="w-24 p-3 rounded-xl border-2 font-bold text-center" value={manualOvertimeAmount} onChange={e => setManualOvertimeAmount(e.target.value)} />
+                                            <input type="text" placeholder="Grund (z.B. Bonus)" className="flex-1 p-3 rounded-xl border-2 font-medium" value={manualOvertimeNote} onChange={e => setManualOvertimeNote(e.target.value)} />
+                                        </div>
+                                        <button type="submit" className="bg-orange-600 text-white p-3 rounded-xl font-bold text-xs uppercase hover:bg-orange-700">Buchen</button>
+                                    </form>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {getSettlementHistory(selectedEmpForDetails.id).length === 0 ? <p className="text-center text-gray-400 text-xs italic">Keine Einträge vorhanden</p> : 
+                                        getSettlementHistory(selectedEmpForDetails.id).map((s, idx) => (
+                                            <div key={idx} className="border-b border-gray-100 pb-3 last:border-0">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-xs font-bold text-gray-400">{formatDate(s.date)}</span>
+                                                    <span className={`text-sm font-black ${s.type === 'manual_adjustment' ? 'text-blue-600' : 'text-green-600'}`}>
+                                                        {s.type === 'manual_adjustment' ? (s.amount > 0 ? `+${s.amount}` : s.amount) : `-${s.paidHours}`} h
+                                                    </span>
+                                                </div>
+                                                <div className="text-xs text-gray-600 mt-1">
+                                                    {s.type === 'manual_adjustment' ? (
+                                                        <span>Manuell: {s.note || '-'}</span>
+                                                    ) : (
+                                                        <span>Abrechnung ({formatDate(s.periodStart)} - {formatDate(s.periodEnd)})</span>
+                                                    )}
+                                                </div>
+                                                <div className="text-[10px] text-gray-400 text-right mt-1">Saldo danach: {parseFloat(s.newBalance).toFixed(2)} h</div>
+                                            </div>
+                                        ))
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showManualLog && (
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
+                                <div className="flex justify-between items-center mb-8">
+                                    <h2 className="text-2xl font-black">Manuelle Buchung</h2>
+                                    <button type="button" onClick={() => setShowManualLog(false)} className="text-gray-400 hover:text-gray-900"><X size={28}/></button>
+                                </div>
+                                <form onSubmit={handleManualLogSubmit} className="space-y-4">
+                                    <select required className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-orange-500" value={manualLogData.employeeId} onChange={(e) => setManualLogData({...manualLogData, employeeId: e.target.value})}>
+                                        <option value="">Mitarbeiter wählen...</option>
+                                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                                    </select>
+                                    <input type="date" required className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-orange-500" value={manualLogData.date} onChange={(e) => setManualLogData({...manualLogData, date: e.target.value})} />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <input type="time" required className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-orange-500" value={manualLogData.startTime} onChange={(e) => setManualLogData({...manualLogData, startTime: e.target.value})} />
+                                        <input type="time" required className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-orange-500" value={manualLogData.endTime} onChange={(e) => setManualLogData({...manualLogData, endTime: e.target.value})} />
+                                    </div>
+                                    <button type="submit" className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg hover:bg-orange-700 transition">BUCHEN</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {showAddEmployee && (
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
+                                <div className="flex justify-between items-center mb-8">
+                                    <h2 className="text-2xl font-black">Neuer Mitarbeiter</h2>
+                                    <button type="button" onClick={() => setShowAddEmployee(false)} className="text-gray-400 hover:text-gray-900"><X size={28}/></button>
+                                </div>
+                                <form onSubmit={handleAddEmployee} className="space-y-4">
+                                    <input type="text" placeholder="Name" required value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-orange-500" />
+                                    <input type="text" placeholder="PIN (4 Zahlen)" required maxLength={4} value={newEmpPin} onChange={(e) => setNewEmpPin(e.target.value.replace(/\D/g, ''))} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-mono text-2xl text-center outline-none focus:border-orange-500" />
+                                    
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="col-span-2 relative">
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Einsatzbereiche (Mehrere möglich)</label>
+                                            <div className="flex flex-wrap gap-2">
+                                                {AVAILABLE_ROLES.map(role => (
+                                                    <button
+                                                        type="button"
+                                                        key={role}
+                                                        onClick={() => {
+                                                            if (newEmpRoles.includes(role)) {
+                                                                if (newEmpRoles.length > 1) setNewEmpRoles(newEmpRoles.filter(r => r !== role));
+                                                            } else {
+                                                                setNewEmpRoles([...newEmpRoles, role]);
+                                                            }
+                                                        }}
+                                                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition ${newEmpRoles.includes(role) ? 'bg-orange-600 text-white border-orange-600 shadow-md' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
+                                                    >
+                                                        {role}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="relative col-span-2">
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Zugriffsrechte</label>
+                                            <select required value={newEmpAccess} onChange={(e) => setNewEmpAccess(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-orange-500">
+                                                <option value="user">Mitarbeiter</option>
+                                                <option value="manager">Dienstplaner</option>
+                                                <option value="admin">Admin</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                       <div className="relative"><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Geburtsdatum</label><input type="date" value={newEmpBirthDate} onChange={(e) => setNewEmpBirthDate(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-orange-500" /></div>
+                                       <div className="relative"><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Soll-Stunden (Woche)</label><input type="number" step="0.5" required value={newEmpWeeklyHours} onChange={(e) => setNewEmpWeeklyHours(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-orange-500" placeholder="z.B. 40" /></div>
+                                    </div>
+                                    <button type="submit" className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-lg shadow-lg hover:bg-orange-700 transition">ANLEGEN</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
                     {showSettingsModal && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[160] p-4">
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
                             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
                                 <div className="flex justify-between items-center mb-6">
                                     <h2 className="text-xl font-black flex items-center gap-2"><Settings className="text-gray-900" /> Einstellungen</h2>
-                                    <button onClick={() => setShowSettingsModal(false)} className="text-gray-400 hover:text-gray-900 transition"><X size={24}/></button>
+                                    <button type="button" onClick={() => setShowSettingsModal(false)} className="text-gray-400 hover:text-gray-900 transition"><X size={24}/></button>
                                 </div>
                                 
-                                {/* Admin PIN ändern */}
                                 <div className="bg-gray-50 p-5 rounded-2xl mb-6 border border-gray-100">
                                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Admin-PIN ändern</h3>
                                     <form onSubmit={handleChangeAdminPin} className="flex gap-2">
@@ -2367,11 +2448,11 @@
                                     <p className="text-[9px] text-gray-400 mt-2">PIN muss mindestens 4 Zahlen enthalten. Standard: 311088.</p>
                                 </div>
 
-                                {/* System Reset */}
                                 <div className="bg-red-50 p-5 rounded-2xl border border-red-100">
                                     <h3 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-2 flex items-center gap-1"><AlertTriangle size={12}/> Gefahrenzone</h3>
                                     <p className="text-xs text-red-800 font-medium mb-4 leading-relaxed">Setzt das gesamte System für den Live-Start zurück. Alle Mitarbeiter, Schichten und Zeiten werden unwiderruflich gelöscht.</p>
                                     <button 
+                                        type="button"
                                         onClick={() => { setShowSettingsModal(false); initiateSystemReset(); }} 
                                         className="w-full bg-red-600 text-white py-3 rounded-xl font-bold text-xs uppercase shadow-md hover:bg-red-700 transition"
                                     >
@@ -2383,11 +2464,11 @@
                     )}
 
                     {showDeleteConfirm && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[170] p-4">
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
                             <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm">
                                 <div className="flex justify-between items-center mb-6">
                                     <h2 className="text-xl font-black text-red-600">Sicherheits-Check</h2>
-                                    <button onClick={() => setShowDeleteConfirm(null)} className="text-gray-400"><X size={24}/></button>
+                                    <button type="button" onClick={() => setShowDeleteConfirm(null)} className="text-gray-400 hover:text-gray-900"><X size={24}/></button>
                                 </div>
                                 <p className="text-sm font-bold text-gray-600 mb-6 text-center">
                                     {showDeleteConfirm.id === 'SYSTEM_RESET' ? 
@@ -2403,24 +2484,27 @@
                                         className="w-full px-5 py-4 bg-red-50 border-2 border-red-100 rounded-2xl font-mono text-2xl text-center outline-none focus:border-red-500" 
                                         autoFocus
                                     />
-                                    <button className="w-full bg-red-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-red-700 transition">BESTÄTIGEN & LÖSCHEN</button>
+                                    <button type="submit" className="w-full bg-red-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-red-700 transition">BESTÄTIGEN & LÖSCHEN</button>
                                 </form>
                             </div>
                         </div>
                     )}
 
                     {editingLog && (
-                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
                             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
-                                <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black">Bearbeiten</h2><button onClick={() => setEditingLog(null)} className="text-gray-400"><X size={28}/></button></div>
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-2xl font-black">Bearbeiten</h2>
+                                    <button type="button" onClick={() => setEditingLog(null)} className="text-gray-400 hover:text-gray-900"><X size={28}/></button>
+                                </div>
                                 <form onSubmit={handleSaveEdit} className="space-y-4">
-                                    <input type="date" required value={editingLog.date} onChange={(e) => setEditingLog({...editingLog, date: e.target.value})} className="w-full px-5 py-3 bg-gray-50 border-2 rounded-2xl font-bold" />
+                                    <input type="date" required value={editingLog.date} onChange={(e) => setEditingLog({...editingLog, date: e.target.value})} className="w-full px-5 py-3 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-orange-500" />
                                     <div className="grid grid-cols-2 gap-4">
-                                        <input type="time" required value={editingLog.startTimeStr} onChange={(e) => setEditingLog({...editingLog, startTimeStr: e.target.value})} className="w-full px-5 py-3 bg-gray-50 border-2 rounded-2xl font-bold" />
-                                        <input type="time" required value={editingLog.endTimeStr} onChange={(e) => setEditingLog({...editingLog, endTimeStr: e.target.value})} className="w-full px-5 py-3 bg-gray-50 border-2 rounded-2xl font-bold" />
+                                        <input type="time" required value={editingLog.startTimeStr} onChange={(e) => setEditingLog({...editingLog, startTimeStr: e.target.value})} className="w-full px-5 py-3 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-orange-500" />
+                                        <input type="time" required value={editingLog.endTimeStr} onChange={(e) => setEditingLog({...editingLog, endTimeStr: e.target.value})} className="w-full px-5 py-3 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-orange-500" />
                                     </div>
-                                    <textarea value={editingLog.note} onChange={(e) => setEditingLog({...editingLog, note: e.target.value})} placeholder="Notiz (optional)" className="w-full px-5 py-3 bg-gray-50 border-2 rounded-2xl font-medium h-24 resize-none" />
-                                    <button type="submit" className="w-full bg-gray-900 text-white py-5 rounded-2xl font-black text-lg">SPEICHERN</button>
+                                    <textarea value={editingLog.note} onChange={(e) => setEditingLog({...editingLog, note: e.target.value})} placeholder="Notiz (optional)" className="w-full px-5 py-3 bg-gray-50 border-2 rounded-2xl font-medium h-24 resize-none outline-none focus:border-orange-500" />
+                                    <button type="submit" className="w-full bg-gray-900 text-white py-5 rounded-2xl font-black text-lg shadow-lg hover:bg-black transition">SPEICHERN</button>
                                 </form>
                             </div>
                         </div>
