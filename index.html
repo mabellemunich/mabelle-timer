@@ -143,6 +143,7 @@
             } catch(e) { return ''; }
         };
 
+        // Neues Format: "Mo. 13.04." (ohne Bindestrich)
         const formatDayDate = (dateVal) => {
             try {
                 if (!dateVal) return '';
@@ -151,7 +152,7 @@
                 const days = ['So.', 'Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.'];
                 const dayStr = String(d.getDate()).padStart(2, '0');
                 const monthStr = String(d.getMonth() + 1).padStart(2, '0');
-                return `${days[d.getDay()]} - ${dayStr}.${monthStr}.`;
+                return `${days[d.getDay()]} ${dayStr}.${monthStr}.`;
             } catch(e) { return ''; }
         };
 
@@ -279,6 +280,7 @@
         function App() {
           const [user, setUser] = useState(null);
           const [view, setView] = useState('terminal'); 
+          const [showAdminLogin, setShowAdminLogin] = useState(false);
           const [adminSubView, setAdminSubView] = useState('overview'); 
           const [activeEmployee, setActiveEmployee] = useState(null);
           const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
@@ -300,8 +302,8 @@
           const [showShiftModal, setShowShiftModal] = useState(false);
           const [showShiftTemplateModal, setShowShiftTemplateModal] = useState(false);
           const [showSwapModal, setShowSwapModal] = useState(null); 
-          const [showTakeoverModal, setShowTakeoverModal] = useState(null); // Wenn Mitarbeiter Schicht vom Kollegen übernehmen will
-          const [takeoverMode, setTakeoverMode] = useState('takeover'); // 'takeover' oder 'swap'
+          const [showTakeoverModal, setShowTakeoverModal] = useState(null);
+          const [takeoverMode, setTakeoverMode] = useState('takeover'); 
           const [tradeShiftId, setTradeShiftId] = useState('');
           
           // Data
@@ -363,6 +365,10 @@
               }
               localStorage.setItem('mabelle_dark_mode', isDarkMode);
           }, [isDarkMode]);
+
+          // Dienstplan Eingabe
+          const [shiftData, setShiftData] = useState({ id: null, employeeId: '', date: '', role: 'Service' });
+          const [newTemplate, setNewTemplate] = useState({ id: null, name: '', startTime: '08:00', endTime: '16:00', color: '#f97316' });
 
           const birthdayAlerts = useMemo(() => checkUpcomingBirthdays(employees), [employees]);
 
@@ -1013,6 +1019,29 @@
               setIsProcessing(false);
           };
 
+          const handleSaveTemplate = async (e) => {
+              e.preventDefault();
+              try {
+                  if (newTemplate.id) {
+                      const { id, ...data } = newTemplate;
+                      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shift_templates', id), data);
+                      showStatus("Vorlage aktualisiert", "success");
+                  } else {
+                      const { id, ...data } = newTemplate;
+                      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shift_templates'), data);
+                      showStatus("Vorlage gespeichert", "success");
+                  }
+                  setNewTemplate({ id: null, name: '', startTime: '08:00', endTime: '16:00', color: '#f97316' });
+              } catch(err) { showStatus("Fehler", "error"); }
+          };
+
+          const handleDeleteTemplate = async (id) => {
+              try {
+                  await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shift_templates', id));
+                  showStatus("Vorlage gelöscht", "success");
+              } catch(err) { showStatus("Fehler", "error"); }
+          };
+
           const saveShiftFromTemplate = async (template) => {
               try {
                   const start = new Date(`${shiftData.date}T${template.startTime}`);
@@ -1140,33 +1169,19 @@
               setIsProcessing(false);
           };
 
-          const handleSaveTemplate = async (e) => {
-              e.preventDefault();
-              try {
-                  if (newTemplate.id) {
-                      const { id, ...data } = newTemplate;
-                      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shift_templates', id), data);
-                      showStatus("Vorlage aktualisiert", "success");
-                  } else {
-                      const { id, ...data } = newTemplate;
-                      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'shift_templates'), data);
-                      showStatus("Vorlage gespeichert", "success");
-                  }
-                  setNewTemplate({ id: null, name: '', startTime: '08:00', endTime: '16:00', color: '#f97316' });
-              } catch(err) { showStatus("Fehler", "error"); }
-          };
-
-          const handleDeleteTemplate = async (id) => {
-              try {
-                  await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shift_templates', id));
-                  showStatus("Vorlage gelöscht", "success");
-              } catch(err) { showStatus("Fehler", "error"); }
-          };
-
           const handlePrintSchedule = () => {
-              const daysHtml = daysOfWeek.map(d => `<th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:center; width:12%;">${formatDayDate(d)}</th>`).join('');
+              // 1. Nur Mitarbeiter, die in dieser Woche eine Schicht haben
+              const currentWeekShifts = shifts.filter(s => shiftDatesStr.includes(s.date));
+              const activeEmpIds = new Set(currentWeekShifts.map(s => s.employeeId));
 
-              const tablesHtml = groupedEmployees.map(group => {
+              const filteredGroups = groupedEmployees.map(group => ({
+                  ...group,
+                  emps: group.emps.filter(emp => activeEmpIds.has(emp.id))
+              })).filter(g => g.emps.length > 0);
+
+              const daysHtml = daysOfWeek.map(d => `<th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:center; width:12%; -webkit-print-color-adjust: exact; print-color-adjust: exact;">${formatDayDate(d)}</th>`).join('');
+
+              const tablesHtml = filteredGroups.map(group => {
                   const empsHtml = group.emps.map(emp => {
                       const cells = shiftDatesStr.map(dateStr => {
                           const shift = shifts.find(s => s.employeeId === emp.id && s.date === dateStr && (s.role === group.role || (!s.role && group.role === 'Service')));
@@ -1174,7 +1189,7 @@
                           if (shift) {
                               const sColor = shift.color || '#f97316';
                               return `<td style="padding:5px; border:1px solid #ddd; text-align:center; vertical-align:middle; width:12%;">
-                                  <div style="padding: 4px; border: 1px solid ${sColor}; background: ${sColor}1a; border-radius: 4px;">
+                                  <div style="padding: 4px; border: 1px solid ${sColor}; background: ${sColor}1a; border-radius: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
                                       <div style="font-weight:bold; font-size:11px; color:${sColor};">${shift.startTime} - ${shift.endTime}</div>
                                   </div>
                               </td>`;
@@ -1183,18 +1198,18 @@
                       }).join('');
                       
                       return `<tr>
-                          <td style="padding:10px; border:1px solid #ddd; font-weight:bold; background:#fff; font-size:14px;">${emp.name}</td>
+                          <td style="padding:10px; border:1px solid #ddd; font-weight:bold; background:#fff; font-size:14px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">${emp.name}</td>
                           ${cells}
                       </tr>`;
                   }).join('');
                   
                   return `
-                  <div style="margin-bottom: 30px;">
-                      <div style="background:#e5e7eb; padding:10px; font-weight:bold; text-transform:uppercase; font-size:12px; color:#4b5563; border:1px solid #ddd; border-bottom:none;">${group.role}</div>
+                  <div style="margin-bottom: 30px; page-break-inside: avoid;">
+                      <div style="background:#e5e7eb; padding:10px; font-weight:bold; text-transform:uppercase; font-size:12px; color:#4b5563; border:1px solid #ddd; border-bottom:none; -webkit-print-color-adjust: exact; print-color-adjust: exact;">${group.role}</div>
                       <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
                           <thead>
                               <tr>
-                                  <th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:left; width: 16%;">Mitarbeiter</th>
+                                  <th style="padding:10px; border:1px solid #ddd; background:#f9fafb; text-align:left; width: 16%; -webkit-print-color-adjust: exact; print-color-adjust: exact;">Mitarbeiter</th>
                                   ${daysHtml}
                               </tr>
                           </thead>
@@ -1212,6 +1227,12 @@
                   <head>
                       <title>Dienstplan KW</title>
                       <style>
+                          @media print {
+                              * {
+                                  -webkit-print-color-adjust: exact !important;
+                                  print-color-adjust: exact !important;
+                              }
+                          }
                           body { font-family: sans-serif; padding: 20px; color: #111827; }
                           h1 { border-bottom: 2px solid #ea580c; padding-bottom: 10px; margin-bottom: 20px; font-size: 24px; color: #111827; }
                           table { font-size: 12px; }
@@ -1220,7 +1241,7 @@
                       </style>
                   </head>
                   <body>
-                      <h1>Dienstplan: ${formatDayDate(daysOfWeek[0]).split(' - ')[1]} - ${formatDayDate(daysOfWeek[6]).split(' - ')[1]}</h1>
+                      <h1>Dienstplan: ${formatDayDate(daysOfWeek[0])} - ${formatDayDate(daysOfWeek[6])}</h1>
                       ${tablesHtml}
                       <div class="footer">Generiert von MABELLE TIMER am ${new Date().toLocaleString('de-DE')}</div>
                       <script>window.onload = function() { window.print(); }${scriptEnd}
@@ -1377,11 +1398,11 @@
                                                {isMyShiftBeingRequested && swap.tradeShiftId ? (
                                                    <div className="mt-3 pl-3 border-l-4 border-orange-400 bg-orange-50 p-3 rounded-r-xl">
                                                         <p className="text-xs text-orange-800 font-bold uppercase tracking-widest mb-1">Angebotene Tausch-Schicht</p>
-                                                        <p className="text-sm text-orange-700 font-black">{formatDayDate(parseDateString(swap.tradeShiftDate)).split(' - ')[1]} &bull; {swap.tradeShiftStart} - {swap.tradeShiftEnd} Uhr ({swap.tradeShiftRole})</p>
+                                                        <p className="text-sm text-orange-700 font-black">{formatDayDate(swap.tradeShiftDate)} &bull; {swap.tradeShiftStart} - {swap.tradeShiftEnd} Uhr ({swap.tradeShiftRole})</p>
                                                         <p className="text-[10px] text-gray-500 mt-2 pt-2 border-t border-orange-200/50 leading-tight">Deine Schicht vom {formatDate(swap.shiftDate)} geht an {requester?.name}.</p>
                                                    </div>
                                                ) : (
-                                                   <p className="text-sm text-gray-600 font-medium mt-1">{formatDayDate(parseDateString(swap.shiftDate))} &bull; {swap.shiftStart} - {swap.shiftEnd} Uhr ({swap.shiftRole})</p>
+                                                   <p className="text-sm text-gray-600 font-medium mt-1">{formatDayDate(swap.shiftDate)} &bull; {swap.shiftStart} - {swap.shiftEnd} Uhr ({swap.shiftRole})</p>
                                                )}
                                             </div>
                                             <div className="flex gap-2 w-full sm:w-auto shrink-0 sm:items-center mt-2 sm:mt-0">
@@ -1467,7 +1488,7 @@
                                         <div className="flex items-center justify-between gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100 w-full sm:w-auto shrink-0">
                                             <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() - 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronLeft size={16}/></button>
                                             <div className="font-bold text-xs text-gray-800 text-center px-2">
-                                               {empDaysOfWeek.length > 0 ? `${formatDayDate(empDaysOfWeek[0]).split(' - ')[1]} - ${formatDayDate(empDaysOfWeek[6]).split(' - ')[1]}` : ''}
+                                               {empDaysOfWeek.length > 0 ? `${formatDayDate(empDaysOfWeek[0])} - ${formatDayDate(empDaysOfWeek[6])}` : ''}
                                             </div>
                                             <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() + 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronRight size={16}/></button>
                                         </div>
@@ -1544,8 +1565,8 @@
                                                 <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase border-b border-r border-gray-200 w-[20%]">Mitarbeiter</th>
                                                 {empDaysOfWeek.map((d, i) => (
                                                    <th key={i} className={`px-2 py-4 text-center border-b border-r border-gray-200 w-[11%] ${i===6 ? 'bg-orange-50/30' : ''}`}>
-                                                      <div className="text-[11px] font-black text-gray-800 uppercase">{formatDayDate(d).split(' - ')[0]}</div>
-                                                      <div className="text-[10px] text-gray-500">{d.getDate()}.</div>
+                                                      <div className="text-[11px] font-black text-gray-800 uppercase">{formatDayDate(d).split(' ')[0]}</div>
+                                                      <div className="text-[10px] text-gray-500">{formatDayDate(d).split(' ')[1]}</div>
                                                    </th>
                                                 ))}
                                              </tr>
@@ -1706,10 +1727,6 @@
                                                     <h2 className="text-3xl font-black tracking-tight">{selectedEmpForDetails.name}</h2>
                                                     <div className="flex items-center gap-3 mt-1">
                                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{getActiveLog(selectedEmpForDetails.id) ? '● IM DIENST' : '● ABWESEND'}</p>
-                                                        <div className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-gray-600 border border-gray-200">
-                                                            <KeyRound size={10} />
-                                                            <span className="text-[10px] font-mono font-black uppercase tracking-widest">PIN: {selectedEmpForDetails.pin}</span>
-                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col items-end gap-2 w-full md:w-auto">
@@ -1775,7 +1792,7 @@
                                      <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100">
                                         <button onClick={() => { const d = new Date(scheduleWeekStart); d.setDate(d.getDate() - 7); setScheduleWeekStart(d); }} className="p-3 text-gray-500 hover:bg-white rounded-xl"><ChevronLeft size={20}/></button>
                                         <div className="px-4 font-bold text-sm text-gray-800 text-center min-w-[140px]">
-                                           {formatDayDate(daysOfWeek[0]).split(' - ')[1]} - {formatDayDate(daysOfWeek[6]).split(' - ')[1]}
+                                           {formatDayDate(daysOfWeek[0]).split(' ')[1]} - {formatDayDate(daysOfWeek[6]).split(' ')[1]}
                                         </div>
                                         <button onClick={() => { const d = new Date(scheduleWeekStart); d.setDate(d.getDate() + 7); setScheduleWeekStart(d); }} className="p-3 text-gray-500 hover:bg-white rounded-xl"><ChevronRight size={20}/></button>
                                      </div>
@@ -1825,7 +1842,8 @@
                                                        <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase border-b border-r border-gray-200 w-[14%]">Mitarbeiter</th>
                                                        {daysOfWeek.map((d, i) => (
                                                           <th key={i} className={`px-2 py-4 text-center border-b border-r border-gray-200 w-[10%] ${i===6 ? 'bg-orange-50/30' : ''}`}>
-                                                             <div className="text-[11px] font-black text-gray-800 uppercase">{formatDayDate(d)}</div>
+                                                             <div className="text-[11px] font-black text-gray-800 uppercase">{formatDayDate(d).split(' ')[0]}</div>
+                                                             <div className="text-[10px] text-gray-500">{formatDayDate(d).split(' ')[1]}</div>
                                                           </th>
                                                        ))}
                                                        <th className="px-2 py-4 text-center text-[10px] font-black text-gray-400 uppercase border-b border-gray-200 bg-gray-50 w-[8%]">Std. Woche</th>
@@ -1861,7 +1879,7 @@
                                                                       {shift ? (
                                                                          <div 
                                                                             onClick={() => { setShiftData({ id: shift.id, employeeId: emp.id, date: dateStr, startTime: shift.startTime, endTime: shift.endTime, role: shift.role || group.role, color: shift.color || '#f97316' }); setShowShiftModal(true); }}
-                                                                            className="rounded-xl p-2 cursor-pointer transition relative group/shift flex flex-col items-center justify-center min-h-[64px]"
+                                                                            className="rounded-xl p-2 cursor-pointer transition relative group/shift flex flex-col items-center justify-center min-h-[64px] hover:scale-105 shadow-sm"
                                                                             style={{ backgroundColor: (shift.color || '#f97316') + '1a', border: '1px solid ' + (shift.color || '#f97316') }}
                                                                          >
                                                                             <div className="text-xs font-bold text-center" style={{ color: shift.color || '#ea580c' }}>{shift.startTime} - {shift.endTime}</div>
@@ -1873,15 +1891,15 @@
                                                                                 onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, role: group.role }); setShowShiftModal(true); }}
                                                                                 className="h-full min-h-[64px] rounded-xl border-2 border-green-300 bg-green-50 flex flex-col items-center justify-center cursor-pointer hover:bg-green-100 transition relative group/empty"
                                                                              >
-                                                                                <span className="text-[8px] font-black uppercase text-green-600 mb-1">Verfügbar</span>
-                                                                                <Plus size={16} className="text-green-400 opacity-0 group-hover/empty:opacity-100 absolute" />
+                                                                                <span className="text-[9px] font-black uppercase text-green-600">Verfügbar</span>
+                                                                                <Plus size={18} className="text-green-500 opacity-30 group-hover/empty:opacity-100 absolute transition-opacity" />
                                                                              </div>
                                                                          ) : (
                                                                              <div 
                                                                                 onClick={() => { setShiftData({ id: null, employeeId: emp.id, date: dateStr, role: group.role }); setShowShiftModal(true); }}
-                                                                                className="h-full min-h-[64px] rounded-xl border border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition opacity-0 group-hover:opacity-100"
+                                                                                className="h-full min-h-[64px] rounded-xl border-2 border-dashed border-gray-200 bg-gray-50/50 flex items-center justify-center cursor-pointer hover:bg-gray-100 hover:border-orange-300 transition group/empty"
                                                                              >
-                                                                                <Plus size={16} className="text-gray-400" />
+                                                                                <Plus size={20} className="text-gray-300 group-hover/empty:text-orange-500 transition-colors" />
                                                                              </div>
                                                                          )
                                                                       )}
@@ -2003,10 +2021,10 @@
                                 </div>
                                 
                                 <form onSubmit={handleSaveTemplate} className="space-y-3 mb-8 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                                    <input type="text" placeholder="Name (z.B. Frühschicht)" required value={newTemplate.name} onChange={e=>setNewTemplate({...newTemplate, name:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
+                                    <input type="text" placeholder="Name (z.B. Frühschicht)" required value={newTemplate.name || ''} onChange={e=>setNewTemplate({...newTemplate, name:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
                                     <div className="grid grid-cols-2 gap-2 mb-3">
-                                        <input type="time" required value={newTemplate.startTime} onChange={e=>setNewTemplate({...newTemplate, startTime:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
-                                        <input type="time" required value={newTemplate.endTime} onChange={e=>setNewTemplate({...newTemplate, endTime:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
+                                        <input type="time" required value={newTemplate.startTime || ''} onChange={e=>setNewTemplate({...newTemplate, startTime:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
+                                        <input type="time" required value={newTemplate.endTime || ''} onChange={e=>setNewTemplate({...newTemplate, endTime:e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" />
                                     </div>
                                     <div className="mb-4">
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Farbe wählen</label>
@@ -2016,9 +2034,9 @@
                                                     type="button" 
                                                     key={c} 
                                                     onClick={() => setNewTemplate({...newTemplate, color: c})} 
-                                                    className={`w-8 h-8 rounded-full border-2 transition-transform ${newTemplate.color === c ? 'border-gray-900 scale-110' : 'border-transparent'}`} 
+                                                    className={`w-8 h-8 rounded-full border-2 transition-transform ${newTemplate?.color === c ? 'border-gray-900 scale-110' : 'border-transparent'}`} 
                                                     style={{ backgroundColor: c }}
-                                                />
+                                                ></button>
                                             ))}
                                         </div>
                                     </div>
