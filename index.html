@@ -75,7 +75,7 @@
             Cake, CloudSun, ThermometerSun, Eye, AlertTriangle, RotateCw, Settings, 
             KeyRound, PiggyBank, MapPin, Siren, Moon, ArrowRightLeft, Download, 
             CheckSquare, Copy, ListTodo, Layers, Shield, ChevronRight, ChevronLeft, 
-            Wand2, Plus, CalendarClock, Sun
+            Wand2, Plus, CalendarClock, Sun, Delete
         } from 'lucide-react';
 
         // --- FIREBASE KONFIGURATION ---
@@ -585,7 +585,6 @@
           };
 
           const handlePinEntry = (val) => {
-              if (val === 'C') { setPin(''); return; }
               const nextPin = pin + val;
               setPin(nextPin);
               if (nextPin === adminPin) { 
@@ -1331,7 +1330,7 @@
                       else if (diffMins > 540) breakMins = 45;
                       
                       const grossHours = end ? (diffMins / 60).toFixed(2) : '0.00';
-                      const netHours = end ? calculateHours(start, end) : '0.00';
+                      const netHours = log.calculatedHours || '0.00';
                       const note = log.note ? log.note.replace(/;/g, ',').replace(/\n/g, ' ') : '';
                       
                       csv += `${emp.name};${dateStr};${startStr};${endStr};${grossHours};${breakMins};${netHours};${note}\n`;
@@ -1394,37 +1393,60 @@
                     {statusMsg && <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 ${statusMsg.type === 'success' ? 'bg-gray-900 text-white' : 'bg-red-600 text-white'}`}><p className="font-bold text-sm">{statusMsg.msg}</p></div>}
 
                     {!activeEmployee && view === 'terminal' && (
-                        <div className="flex-1 flex flex-col items-center justify-center">
-                            <div className="bg-white p-8 sm:p-12 rounded-[3rem] shadow-2xl w-full max-w-sm border border-gray-100 text-center relative overflow-hidden">
-                                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-orange-400 to-orange-600"></div>
-                                <div className="mb-10 mt-2">
-                                    <h2 className="text-5xl font-black text-gray-900 mb-1 tracking-tighter uppercase drop-shadow-sm">Mabelle</h2>
-                                    <p className="text-orange-600 text-sm font-black uppercase tracking-[0.4em]">Timer</p>
+                        <div className="flex-1 flex flex-col items-center justify-center p-4">
+                            {/* Haupt-Karte (Card) - Modernisiertes Design */}
+                            <div className="w-full max-w-sm p-8 rounded-2xl shadow-xl transition-all duration-300 border bg-white border-gray-200 relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-400 to-orange-600"></div>
+                                
+                                <div className="mb-8 mt-2 text-center">
+                                    <h2 className="text-3xl font-black text-gray-900 mb-1 tracking-tighter uppercase">Mabelle</h2>
+                                    <p className="text-orange-600 text-[10px] font-black uppercase tracking-[0.4em]">Timer</p>
                                 </div>
-                                <div className="space-y-8">
-                                    {/* Modernisiertes PIN-Feld */}
-                                    <div className="bg-gray-50/80 border-2 border-gray-100 rounded-3xl h-20 flex items-center justify-center gap-4 w-full shadow-inner transition-all">
-                                        {pin.length > 0 ? pin.split('').map((_, i) => (
-                                            <div key={i} className="w-5 h-5 rounded-full bg-orange-600 shadow-[0_0_15px_rgba(234,88,12,0.6)] animate-in zoom-in duration-200"></div>
-                                        )) : (
-                                            <span className="text-gray-300 text-sm font-bold uppercase tracking-widest animate-pulse">Bitte PIN eingeben</span>
-                                        )}
-                                    </div>
-                                    
-                                    {/* Modernisierte Tastatur */}
-                                    <div className="grid grid-cols-3 gap-3 sm:gap-4">
-                                        {[1,2,3,4,5,6,7,8,9].map((val) => (
-                                            <button key={val} onClick={() => handlePinEntry(val)} className="h-16 sm:h-20 rounded-[2rem] text-2xl sm:text-3xl font-black transition-all duration-200 active:scale-90 flex items-center justify-center bg-white border-2 border-gray-100 text-gray-800 hover:border-orange-500 hover:text-orange-600 hover:shadow-lg hover:-translate-y-1">
-                                                {val}
-                                            </button>
-                                        ))}
-                                        <button onClick={() => handlePinEntry('C')} className="h-16 sm:h-20 rounded-[2rem] text-xl sm:text-2xl font-black transition-all duration-200 active:scale-90 flex items-center justify-center bg-red-50 border-2 border-red-100 text-red-500 hover:bg-red-100 hover:border-red-200 hover:-translate-y-1">
-                                            C
+                                
+                                {/* Die PIN-Punkte (Standard: 4, erweitert sich bei Bedarf) */}
+                                <div className="flex justify-center gap-4 mb-8">
+                                    {Array.from({ length: Math.max(4, pin.length) }, (_, i) => i).map(i => (
+                                        <div 
+                                            key={i} 
+                                            className={`w-4 h-4 rounded-full border transition-all duration-200 
+                                                ${pin.length > i 
+                                                    ? 'bg-orange-600 border-orange-600 scale-110 shadow-[0_0_10px_rgba(234,88,12,0.4)]' 
+                                                    : 'border-gray-300 bg-transparent'
+                                                }`}
+                                        ></div>
+                                    ))}
+                                </div>
+
+                                {/* Das Zahlenfeld (Numpad) */}
+                                <div className="grid grid-cols-3 gap-4 mb-2">
+                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+                                        <button 
+                                            key={num} 
+                                            onClick={() => handlePinEntry(String(num))} 
+                                            className="h-16 rounded-xl text-xl font-bold transition-all active:scale-95 bg-gray-100 text-gray-800 hover:bg-gray-200"
+                                        >
+                                            {num}
                                         </button>
-                                        <button onClick={() => handlePinEntry(0)} className="h-16 sm:h-20 rounded-[2rem] text-2xl sm:text-3xl font-black transition-all duration-200 active:scale-90 flex items-center justify-center bg-white border-2 border-gray-100 text-gray-800 hover:border-orange-500 hover:text-orange-600 hover:shadow-lg hover:-translate-y-1">
+                                    ))}
+                                    
+                                    {/* Die Null (zentriert in der unteren Reihe) */}
+                                    <div className="col-start-2">
+                                        <button 
+                                            onClick={() => handlePinEntry('0')} 
+                                            className="w-full h-16 rounded-xl text-xl font-bold transition-all active:scale-95 bg-gray-100 text-gray-800 hover:bg-gray-200"
+                                        >
                                             0
                                         </button>
-                                        <div className="h-16 sm:h-20"></div>
+                                    </div>
+                                    
+                                    {/* Löschen-Button (Rücktaste) */}
+                                    <div>
+                                        <button 
+                                            onClick={() => setPin(prev => prev.slice(0, -1))} 
+                                            className="w-full h-16 rounded-xl flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-red-500 transition-all active:scale-95"
+                                        >
+                                            <Delete size={24} />
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -1434,13 +1456,13 @@
                     {activeEmployee && view === 'terminal' && (
                         <div className="max-w-4xl mx-auto space-y-6">
                             {/* TAUSCHANFRAGEN BANNER (Punkt 3) */}
-                            {myPendingSwaps.length > 0 && (
+                            {availableSwaps.length > 0 && (
                                <div className="bg-blue-50 border-2 border-blue-200 p-6 rounded-[2rem] shadow-sm mb-6 flex flex-col gap-4 animate-in slide-in-from-top-4">
                                   <div className="flex items-center gap-3 text-blue-700">
                                      <ArrowRightLeft size={24} />
                                      <h3 className="font-black text-lg">Schicht-Tauschbörse</h3>
                                   </div>
-                                  {myPendingSwaps.map(swap => {
+                                  {availableSwaps.map(swap => {
                                      const fromEmp = employees.find(e => e.id === swap.fromEmpId);
                                      const requester = employees.find(e => e.id === swap.requestedBy);
                                      let isMyShiftBeingRequested = swap.fromEmpId === activeEmployee?.id && swap.requestedBy !== activeEmployee?.id;
@@ -1549,7 +1571,7 @@
                                         <div className="flex items-center justify-between gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100 w-full sm:w-auto shrink-0">
                                             <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() - 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronLeft size={16}/></button>
                                             <div className="font-bold text-xs text-gray-800 text-center px-2">
-                                               {empDaysOfWeek.length > 0 ? `${formatDayDate(empDaysOfWeek[0]).split(' ')[1]} - ${formatDayDate(empDaysOfWeek[6]).split(' ')[1]}` : ''}
+                                               {empDaysOfWeek.length > 0 ? `${formatDayDate(empDaysOfWeek[0])} - ${formatDayDate(empDaysOfWeek[6])}` : ''}
                                             </div>
                                             <button onClick={() => { const d = new Date(empScheduleWeekStart); d.setDate(d.getDate() + 7); setEmpScheduleWeekStart(d); }} className="p-2 text-gray-500 hover:bg-white rounded-xl"><ChevronRight size={16}/></button>
                                         </div>
@@ -1736,19 +1758,19 @@
                                         <div className="flex items-center gap-4"><div className="bg-orange-100 p-3 rounded-2xl text-orange-600"><CalendarDays size={28} /></div><div><h2 className="text-2xl font-black tracking-tight">Zeitraum</h2><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Filter</p></div></div>
                                         <div className="flex flex-wrap items-center gap-4">
                                             <div className="flex items-center justify-between gap-2 bg-gray-50 p-1 rounded-2xl border border-gray-100 w-full sm:w-auto shrink-0">
-                                                <button onClick={handlePrevPeriod} className="p-3 text-gray-500 hover:bg-white rounded-xl transition"><ChevronLeft size={18}/></button>
+                                                <button type="button" onClick={handlePrevPeriod} className="p-3 text-gray-500 hover:bg-white rounded-xl transition"><ChevronLeft size={18}/></button>
                                                 <div className="font-bold text-sm text-gray-800 text-center px-4 min-w-[200px]">
                                                     {formatDate(period.start)} - {formatDate(period.end)}
                                                 </div>
-                                                <button onClick={handleNextPeriod} className="p-3 text-gray-500 hover:bg-white rounded-xl transition"><ChevronRight size={18}/></button>
+                                                <button type="button" onClick={handleNextPeriod} className="p-3 text-gray-500 hover:bg-white rounded-xl transition"><ChevronRight size={18}/></button>
                                             </div>
-                                            <button onClick={() => setShowBossMsgModal(true)} className="bg-orange-50 text-orange-600 p-4 rounded-2xl border border-orange-100 hover:bg-orange-100 transition flex items-center gap-2 font-bold text-xs uppercase"><Megaphone size={16}/></button>
-                                            <button onClick={() => setShowManualLog(true)} className="bg-gray-100 text-gray-800 p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-gray-200 transition"><PlusCircle size={16}/> EINTRAG</button>
+                                            <button type="button" onClick={() => setShowBossMsgModal(true)} className="bg-orange-50 text-orange-600 p-4 rounded-2xl border border-orange-100 hover:bg-orange-100 transition flex items-center gap-2 font-bold text-xs uppercase"><Megaphone size={16}/></button>
+                                            <button type="button" onClick={() => setShowManualLog(true)} className="bg-gray-100 text-gray-800 p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-gray-200 transition relative z-10"><PlusCircle size={16}/> EINTRAG</button>
                                             
                                             {/* CSV EXPORT BUTTON */}
-                                            <button onClick={handleExportCSV} className="bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 transition"><Download size={16}/> CSV Export</button>
+                                            <button type="button" onClick={handleExportCSV} className="bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 transition relative z-10"><Download size={16}/> CSV Export</button>
 
-                                            <button onClick={() => setShowAddEmployee(true)} className="bg-orange-600 text-white p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-orange-700 transition z-50"><UserPlus size={16}/> PERSONAL</button>
+                                            <button type="button" onClick={() => setShowAddEmployee(true)} className="bg-orange-600 text-white p-4 rounded-2xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-orange-700 transition relative z-10"><UserPlus size={16}/> PERSONAL</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1788,10 +1810,6 @@
                                                     <h2 className="text-3xl font-black tracking-tight">{selectedEmpForDetails.name}</h2>
                                                     <div className="flex items-center gap-3 mt-1">
                                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{getActiveLog(selectedEmpForDetails.id) ? '● IM DIENST' : '● ABWESEND'}</p>
-                                                        <div className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-gray-600 border border-gray-200">
-                                                            <KeyRound size={10} />
-                                                            <span className="text-[10px] font-mono font-black uppercase tracking-widest">PIN: {selectedEmpForDetails.pin}</span>
-                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col items-end gap-2 w-full md:w-auto">
